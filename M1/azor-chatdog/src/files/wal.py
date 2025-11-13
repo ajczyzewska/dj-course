@@ -1,10 +1,11 @@
 import os
 import json
 from datetime import datetime
+from typing import Tuple, Optional
 from files.config import WAL_FILE
 
 
-def append_to_wal(session_id: str, prompt: str, response_text: str, total_tokens: int, model_name: str) -> tuple[bool, str | None]:
+def append_to_wal(session_id: str, prompt: str, response_text: str, total_tokens: int, model_name: str) -> Tuple[bool, Optional[str]]:
     """
     Appends a transaction to the WAL (Write-Ahead Log) file.
     
@@ -16,7 +17,7 @@ def append_to_wal(session_id: str, prompt: str, response_text: str, total_tokens
         model_name: Name of the LLM model used
     
     Returns:
-        tuple[bool, str | None]: (success, error_message)
+        Tuple[bool, Optional[str]]: (success, error_message)
     """
     
     wal_entry = {

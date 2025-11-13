@@ -1,15 +1,15 @@
 import os
 import json
 from datetime import datetime
-from typing import List, Any, Dict
+from typing import List, Any, Dict, Optional, Tuple
 from files.config import LOG_DIR
 
-def load_session_history(session_id: str) -> tuple[List[Dict], str | None]:
+def load_session_history(session_id: str) -> Tuple[List[Dict], Optional[str]]:
     """
     Loads session history from a JSON file in universal format.
     
     Returns:
-        tuple[List[Dict], str | None]: (conversation_history, error_message)
+        Tuple[List[Dict], Optional[str]]: (conversation_history, error_message)
         History format: [{"role": "user|model", "parts": [{"text": "..."}]}, ...]
     """
     
@@ -35,7 +35,7 @@ def load_session_history(session_id: str) -> tuple[List[Dict], str | None]:
 
     return history, None
 
-def save_session_history(session_id: str, history: List[Dict], system_prompt: str, model_name: str) -> tuple[bool, str | None]:
+def save_session_history(session_id: str, history: List[Dict], system_prompt: str, model_name: str) -> Tuple[bool, Optional[str]]:
     """
     Saves the current session history to a JSON file,
     only if the history contains at least one complete turn (User + Model).
@@ -47,7 +47,7 @@ def save_session_history(session_id: str, history: List[Dict], system_prompt: st
         model_name: Name of the LLM model used
     
     Returns:
-        tuple[bool, str | None]: (success, error_message)
+        Tuple[bool, Optional[str]]: (success, error_message)
     """
     if len(history) < 2:
         # CONDITION: Prevents saving empty/incomplete session
@@ -122,7 +122,7 @@ def list_sessions():
     
     return sessions_data
 
-def remove_session_file(session_id: str) -> tuple[bool, str | None]:
+def remove_session_file(session_id: str) -> Tuple[bool, Optional[str]]:
     """
     Removes a session log file from the filesystem.
 

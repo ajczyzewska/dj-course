@@ -1,10 +1,11 @@
+from typing import Optional
 from .chat_session import ChatSession
 from .session_manager import SessionManager
 
 
 # Global session manager instance
 # This replaces the global variables in config.py
-_session_manager: SessionManager | None = None
+_session_manager: Optional[SessionManager] = None
 
 
 def get_session_manager() -> SessionManager:

@@ -1,5 +1,5 @@
 import uuid
-from typing import List, Any, Union
+from typing import List, Any, Union, Optional, Tuple
 import os
 from files import session_files
 from files.wal import append_to_wal
@@ -23,7 +23,7 @@ class ChatSession:
     Encapsulates session ID, conversation history, assistant, and LLM chat session.
     """
     
-    def __init__(self, assistant: Assistant, session_id: str | None = None, history: List[Any] | None = None):
+    def __init__(self, assistant: Assistant, session_id: Optional[str] = None, history: Optional[List[Any]] = None):
         """
         Initialize a chat session.
         
@@ -35,7 +35,7 @@ class ChatSession:
         self.assistant = assistant
         self.session_id = session_id or str(uuid.uuid4())
         self._history = history or []
-        self._llm_client: Union[GeminiLLMClient, LlamaClient, None] = None
+        self._llm_client: Optional[Union[GeminiLLMClient, LlamaClient]] = None
         self._llm_chat_session = None
         self._max_context_tokens = 32768
         self._initialize_llm_session()
@@ -66,7 +66,7 @@ class ChatSession:
     
     
     @classmethod
-    def load_from_file(cls, assistant: Assistant, session_id: str) -> tuple['ChatSession | None', str | None]:
+    def load_from_file(cls, assistant: Assistant, session_id: str) -> Tuple[Optional['ChatSession'], Optional[str]]:
         """
         Loads a session from disk.
         
@@ -85,7 +85,7 @@ class ChatSession:
         session = cls(assistant=assistant, session_id=session_id, history=history)
         return session, None
     
-    def save_to_file(self) -> tuple[bool, str | None]:
+    def save_to_file(self) -> Tuple[bool, Optional[str]]:
         """
         Saves this session to disk.
         Only saves if history has at least one complete exchange.
