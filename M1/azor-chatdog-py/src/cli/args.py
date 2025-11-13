@@ -1,6 +1,7 @@
 import argparse
+from typing import Optional
 
-def get_session_id_from_cli() -> str | None:
+def get_session_id_from_cli() -> Optional[str]:
     """Parses CLI arguments in search of --session-id."""
     parser = argparse.ArgumentParser(description="Interaktywny pies asystent! 🐶")
     parser.add_argument(

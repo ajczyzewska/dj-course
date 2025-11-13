@@ -1,3 +1,4 @@
+from typing import Optional, Tuple
 from cli import console
 from .chat_session import ChatSession
 from assistant import create_azor_assistant
@@ -12,7 +13,7 @@ class SessionManager:
     
     def __init__(self):
         """Initializes with no active session."""
-        self._current_session: ChatSession | None = None
+        self._current_session: Optional[ChatSession] = None
     
     def get_current_session(self) -> ChatSession:
         """
@@ -29,7 +30,7 @@ class SessionManager:
         """Returns True if there's an active session."""
         return self._current_session is not None
     
-    def create_new_session(self, save_current: bool = True) -> tuple[ChatSession, bool, str | None, str | None]:
+    def create_new_session(self, save_current: bool = True) -> Tuple[ChatSession, bool, Optional[str], Optional[str]]:
         """
         Creates a new session, optionally saving the current one.
         
@@ -62,7 +63,7 @@ class SessionManager:
         
         return new_session, save_attempted, previous_session_id, save_error
     
-    def switch_to_session(self, session_id: str) -> tuple[ChatSession | None, bool, str | None, bool, str | None, bool]:
+    def switch_to_session(self, session_id: str) -> Tuple[Optional[ChatSession], bool, Optional[str], bool, Optional[str], bool]:
         """
         Switches to an existing session by ID.
         Saves current session before switching.
@@ -102,7 +103,7 @@ class SessionManager:
         
         return new_session, save_attempted, previous_session_id, True, None, has_history
 
-    def remove_current_session_and_create_new(self) -> tuple[ChatSession, str, bool, str | None]:
+    def remove_current_session_and_create_new(self) -> Tuple[ChatSession, str, bool, Optional[str]]:
         """
         Removes the current session file and immediately creates a new, empty session.
 
@@ -125,7 +126,7 @@ class SessionManager:
 
         return new_session, removed_session_id, remove_success, remove_error
 
-    def initialize_from_cli(self, cli_session_id: str | None) -> ChatSession:
+    def initialize_from_cli(self, cli_session_id: Optional[str]) -> ChatSession:
         """
         Initializes a session based on CLI arguments.
         Either loads an existing session or creates a new one.
