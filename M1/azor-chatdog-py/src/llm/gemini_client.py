@@ -104,24 +104,27 @@ class GeminiLLMClient:
         return "🤖 Przygotowywanie klienta Gemini..."
     
     @classmethod
-    def from_environment(cls) -> 'GeminiLLMClient':
+    def from_environment(cls, interactive: bool = True) -> 'GeminiLLMClient':
         """
         Factory method that creates a GeminiLLMClient instance from environment variables.
-        
+
+        Args:
+            interactive: Ignored for Gemini (compatibility parameter)
+
         Returns:
             GeminiLLMClient instance initialized with environment variables
-            
+
         Raises:
             ValueError: If required environment variables are not set
         """
         load_dotenv()
-    
+
         # Walidacja z Pydantic
         config = GeminiConfig(
             model_name=os.getenv('MODEL_NAME', 'gemini-2.5-flash'),
             gemini_api_key=os.getenv('GEMINI_API_KEY', '')
         )
-        
+
         return cls(model_name=config.model_name, api_key=config.gemini_api_key)
     
     def _initialize_client(self) -> genai.Client:
