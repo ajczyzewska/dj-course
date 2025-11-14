@@ -39,41 +39,64 @@ class LlamaChatSession:
     def send_message(self, text: str) -> Any:
         """
         Sends a message to the LLaMA model and returns a response object.
-        
+
         Args:
             text: User's message
-            
+
         Returns:
             Response object with .text attribute containing the response
         """
         # Add user message to history
         user_message = {"role": "user", "parts": [{"text": text}]}
         self._history.append(user_message)
-        
+
         # Build prompt from system instruction + conversation history
         prompt = self._build_prompt_from_history()
-        
+
         try:
+            # Count tokens in prompt for diagnostics
+            prompt_tokens = self.llama_model.tokenize(prompt.encode('utf-8'))
+            prompt_token_count = len(prompt_tokens)
+
+            # Calculate safe max_tokens to avoid context overflow
+            # Leave some buffer (100 tokens) for safety
+            safe_max_tokens = self.llama_model.n_ctx() - prompt_token_count - 100
+
+            if safe_max_tokens < 50:
+                # Prompt is too long, even after sliding window
+                console.print_error(f"⚠️  Prompt zbyt długi ({prompt_token_count} tokenów). Czyszczę historię...")
+                # Clear most of history, keep only last 2 exchanges
+                if len(self._history) > 5:
+                    self._history = self._history[-5:]
+                    prompt = self._build_prompt_from_history()
+                    prompt_tokens = self.llama_model.tokenize(prompt.encode('utf-8'))
+                    prompt_token_count = len(prompt_tokens)
+                    safe_max_tokens = self.llama_model.n_ctx() - prompt_token_count - 100
+
+            # Clamp max_tokens to safe value
+            max_tokens = min(512, max(50, safe_max_tokens))
+
             # Generate response using LLaMA with generation parameters
+            # Use Gemma-specific stop tokens for proper chat format
             output = self.llama_model(
                 prompt,
-                max_tokens=512,
-                stop=["User:", "Assistant:", "\n\nUser:", "\n\nAssistant:"],
+                max_tokens=max_tokens,
+                stop=["<end_of_turn>", "<start_of_turn>user"],
                 echo=False,
                 temperature=self.temperature,
                 top_p=self.top_p,
                 top_k=self.top_k,
             )
-            
+
             response_text = output["choices"][0]["text"].strip()
-            
+
             # Add assistant response to history
             assistant_message = {"role": "model", "parts": [{"text": response_text}]}
             self._history.append(assistant_message)
-            
+
             # Return response object compatible with Gemini interface
             return LlamaResponse(response_text)
-            
+
         except Exception as e:
             console.print_error(f"Błąd podczas generowania odpowiedzi LLaMA: {e}")
             # Return error response
@@ -89,36 +112,56 @@ class LlamaChatSession:
     def _build_prompt_from_history(self) -> str:
         """
         Builds a prompt string from the conversation history and system instruction.
-        
+        Uses a sliding window to keep only recent messages if history is too long.
+        Uses Gemma chat template format for better compatibility.
+
         Returns:
             Formatted prompt string for the LLaMA model
         """
-        prompt_parts = []
-        
-        # Add system instruction
+        # Use sliding window: keep only last 10 exchanges (20 messages) to avoid context overflow
+        history_window = self._history[:-1]  # Exclude current user input
+        if len(history_window) > 20:
+            history_window = history_window[-20:]
+
+        # Build messages in chat format for Gemma
+        messages = []
+
+        # Add system message if present
         if self.system_instruction:
-            prompt_parts.append(f"System: {self.system_instruction}")
-        
+            messages.append({
+                "role": "user",
+                "content": f"System instruction: {self.system_instruction}\n\nPlease acknowledge this instruction."
+            })
+            messages.append({
+                "role": "assistant",
+                "content": "Understood. I will follow this instruction."
+            })
+
         # Add conversation history
-        for message in self._history[:-1]:  # Exclude the last message (current user input)
-            role = message["role"]
-            text = message["parts"][0]["text"]
-            
-            if role == "user":
-                prompt_parts.append(f"User: {text}")
-            elif role == "model":
-                prompt_parts.append(f"Assistant: {text}")
-        
+        for message in history_window:
+            role = "user" if message["role"] == "user" else "assistant"
+            content = message["parts"][0]["text"]
+            messages.append({"role": role, "content": content})
+
         # Add the current user message
         if self._history:
             last_message = self._history[-1]
             if last_message["role"] == "user":
-                user_text = last_message["parts"][0]["text"]
-                prompt_parts.append(f"User: {user_text}")
-        
-        prompt_parts.append("Assistant:")
-        
-        return "\n\n".join(prompt_parts)
+                messages.append({
+                    "role": "user",
+                    "content": last_message["parts"][0]["text"]
+                })
+
+        # Format using Gemma's chat template
+        # Format: <start_of_turn>user\n{message}<end_of_turn>\n<start_of_turn>model\n
+        prompt_parts = []
+        for msg in messages:
+            prompt_parts.append(f"<start_of_turn>{msg['role']}\n{msg['content']}<end_of_turn>")
+
+        # Add the model turn start for response
+        prompt_parts.append("<start_of_turn>model")
+
+        return "\n".join(prompt_parts)
 
 
 class LlamaResponse:
@@ -184,28 +227,57 @@ class LlamaClient:
         return "🦙 Przygotowywanie klienta llama.cpp..."
     
     @classmethod
-    def from_environment(cls) -> 'LlamaClient':
+    def from_environment(cls, interactive: bool = True) -> 'LlamaClient':
         """
         Factory method that creates a LlamaClient instance from environment variables.
-        
+
+        Args:
+            interactive: If True, ask user for generation parameters interactively
+
         Returns:
             LlamaClient instance initialized with environment variables
-            
+
         Raises:
             ValueError: If model file is not found or configuration is invalid
         """
         load_dotenv()
-    
+
+        # Ask for model choice interactively if requested
+        model_path = os.getenv('LLAMA_MODEL_PATH')
+        model_name = os.getenv('MODEL_NAME', 'llama-3.1-8b-instruct')
+
+        if interactive:
+            from cli.interactive_config import ask_for_model_choice
+            model_choice = ask_for_model_choice()
+            if model_choice:
+                model_path, model_name = model_choice
+
         # Walidacja z Pydantic
         config = LlamaConfig(
-            model_name=os.getenv('MODEL_NAME', 'llama-3.1-8b-instruct'),
-            llama_model_path=os.getenv('LLAMA_MODEL_PATH'),
+            model_name=model_name,
+            llama_model_path=model_path,
             llama_gpu_layers=int(os.getenv('LLAMA_GPU_LAYERS', '1')),
             llama_context_size=int(os.getenv('LLAMA_CONTEXT_SIZE', '2048')),
             llama_temperature=float(os.getenv('LLAMA_TEMPERATURE', '0.7')),
             llama_top_p=float(os.getenv('LLAMA_TOP_P', '0.9')),
             llama_top_k=int(os.getenv('LLAMA_TOP_K', '40'))
         )
+
+        # Ask for generation parameters interactively if requested
+        if interactive:
+            from cli.interactive_config import ask_for_generation_params
+            params = ask_for_generation_params(
+                current_temp=config.llama_temperature,
+                current_top_p=config.llama_top_p,
+                current_top_k=config.llama_top_k
+            )
+            temperature = params['temperature']
+            top_p = params['top_p']
+            top_k = params['top_k']
+        else:
+            temperature = config.llama_temperature
+            top_p = config.llama_top_p
+            top_k = config.llama_top_k
 
         console.print_info(f"Ładowanie modelu LLaMA z: {config.llama_model_path}")
 
@@ -214,9 +286,9 @@ class LlamaClient:
             model_path=config.llama_model_path,
             n_gpu_layers=config.llama_gpu_layers,
             n_ctx=config.llama_context_size,
-            temperature=config.llama_temperature,
-            top_p=config.llama_top_p,
-            top_k=config.llama_top_k
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k
         )
     
     def _initialize_model(self) -> Llama:

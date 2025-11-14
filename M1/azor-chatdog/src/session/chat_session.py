@@ -23,14 +23,16 @@ class ChatSession:
     Encapsulates session ID, conversation history, assistant, and LLM chat session.
     """
     
-    def __init__(self, assistant: Assistant, session_id: Optional[str] = None, history: Optional[List[Any]] = None):
+    def __init__(self, assistant: Assistant, session_id: Optional[str] = None, history: Optional[List[Any]] = None,
+                 interactive_config: bool = True):
         """
         Initialize a chat session.
-        
+
         Args:
             assistant: Assistant instance that defines the behavior and model for this session
             session_id: Unique session identifier. If None, generates a new UUID.
             history: Initial conversation history. If None, starts empty.
+            interactive_config: If True, ask for generation parameters interactively (only for new sessions)
         """
         self.assistant = assistant
         self.session_id = session_id or str(uuid.uuid4())
@@ -38,6 +40,8 @@ class ChatSession:
         self._llm_client: Optional[Union[GeminiLLMClient, LlamaClient]] = None
         self._llm_chat_session = None
         self._max_context_tokens = 32768
+        # Only ask for config if it's a new session (no history)
+        self._interactive_config = interactive_config and not history
         self._initialize_llm_session()
     
     def _initialize_llm_session(self):
@@ -55,7 +59,8 @@ class ChatSession:
         if self._llm_client is None:
             SelectedClientClass = ENGINE_MAPPING.get(engine, GeminiLLMClient)
             console.print_info(SelectedClientClass.preparing_for_use_message())
-            self._llm_client = SelectedClientClass.from_environment()
+            # Pass interactive flag to from_environment()
+            self._llm_client = SelectedClientClass.from_environment(interactive=self._interactive_config)
             console.print_info(self._llm_client.ready_for_use_message())
         
         self._llm_chat_session = self._llm_client.create_chat_session(
