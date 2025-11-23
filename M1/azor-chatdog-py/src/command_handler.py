@@ -3,9 +3,10 @@ from cli import console
 from commands.session_list import list_sessions_command
 from commands.session_display import display_full_session
 from commands.session_to_pdf import export_session_to_pdf
+from commands.session_to_audio import export_last_response_to_audio
 from commands.session_remove import remove_session_command
 
-VALID_SLASH_COMMANDS = ['/exit', '/quit', '/switch', '/help', '/session', '/pdf']
+VALID_SLASH_COMMANDS = ['/exit', '/quit', '/switch', '/help', '/session', '/pdf', '/audio']
 
 def handle_command(user_input: str) -> bool:
     """
@@ -72,6 +73,10 @@ def handle_command(user_input: str) -> bool:
     elif command == '/pdf':
         current = manager.get_current_session()
         export_session_to_pdf(current.get_history(), current.session_id, current.assistant_name)
+
+    elif command == '/audio':
+        current = manager.get_current_session()
+        export_last_response_to_audio(current.get_history(), current.session_id, current.assistant_name)
 
     return False
 
