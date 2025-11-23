@@ -10,6 +10,8 @@ import sys
 import logging
 import logging.handlers
 from typing import TextIO
+import json
+from datetime import datetime
 
 # --- Global Configuration ---
 APP_TITLE = "Azor Transcriber"
@@ -87,10 +89,69 @@ except ImportError:
 # === 1. Transcription Configuration ===
 MODEL_NAME = "openai/whisper-tiny"
 
-def output_filename()  -> str:
+def output_filename() -> str:
     """Generates output filename for transcription results."""
     os.makedirs('output', exist_ok=True)
     return f"output/recording-{int(time.time())}.wav"
+
+def save_transcription_metadata(wav_path: str, transcription: str) -> str:
+    """Saves transcription metadata to a JSON file alongside the WAV file."""
+    json_path = wav_path.replace('.wav', '.json')
+    metadata = {
+        'wav_file': os.path.basename(wav_path),
+        'transcription': transcription,
+        'timestamp': datetime.now().isoformat(),
+        'model': MODEL_NAME
+    }
+    with open(json_path, 'w', encoding='utf-8') as f:
+        json.dump(metadata, f, ensure_ascii=False, indent=2)
+    logging.info(f"Metadata saved to {json_path}")
+    return json_path
+
+def load_all_transcriptions() -> list:
+    """Loads all transcriptions from the output folder."""
+    transcriptions = []
+    output_dir = 'output'
+    if not os.path.exists(output_dir):
+        return transcriptions
+
+    for filename in os.listdir(output_dir):
+        if filename.endswith('.json'):
+            json_path = os.path.join(output_dir, filename)
+            try:
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    data['json_path'] = json_path
+                    transcriptions.append(data)
+            except Exception as e:
+                logging.error(f"Error loading {json_path}: {e}")
+
+    # Sort by timestamp, newest first
+    transcriptions.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+    return transcriptions
+
+def delete_transcription(json_path: str) -> bool:
+    """Deletes a transcription and its associated WAV file."""
+    try:
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        wav_path = os.path.join(os.path.dirname(json_path), data.get('wav_file', ''))
+
+        # Delete JSON file
+        if os.path.exists(json_path):
+            os.remove(json_path)
+            logging.info(f"Deleted {json_path}")
+
+        # Delete WAV file
+        if os.path.exists(wav_path):
+            os.remove(wav_path)
+            logging.info(f"Deleted {wav_path}")
+
+        return True
+    except Exception as e:
+        logging.error(f"Error deleting transcription: {e}")
+        return False
 
 def transcribe_audio(audio_path: str, model_name: str) -> str:
     """
@@ -207,28 +268,66 @@ class AudioRecorderApp:
         self.notebook.add(self.transcriber_frame, text='Transcriber')
 
         # 2. History Tab
-        self.history_frame = tk.Frame(self.notebook, bg="#121212") # Consistent dark background
-        self.notebook.add(self.history_frame, text='Transcription History')
-        
-        # Content for History Tab: Last Transcription Display
-        tk.Label(self.history_frame, text="Last transcription:", font=('Arial', 14, 'bold'), fg='white', bg="#121212").pack(pady=(10, 5))
-        
-        self.history_display = tk.Text(self.history_frame, 
-                                       height=10, 
-                                       wrap=tk.WORD, 
-                                       font=('Arial', 11),
-                                       relief=tk.SUNKEN, 
-                                       bg='#1E1E1E', 
-                                       fg='white', 
-                                       insertbackground='white', 
-                                       state=tk.DISABLED 
-                                      )
-        self.history_display.pack(pady=10, padx=20, fill=tk.BOTH, expand=True)
-        
-        # Placeholder text in history
-        self.history_display.config(state=tk.NORMAL)
-        self.history_display.insert(tk.END, "Under construction...")
-        self.history_display.config(state=tk.DISABLED)
+        self.history_frame = tk.Frame(self.notebook, bg="#121212")
+        self.notebook.add(self.history_frame, text='History')
+
+        # Header for History Tab
+        header_frame = tk.Frame(self.history_frame, bg="#121212")
+        header_frame.pack(fill=tk.X, padx=20, pady=(10, 5))
+
+        tk.Label(header_frame, text="Transcription History", font=('Arial', 14, 'bold'), fg='white', bg="#121212").pack(side=tk.LEFT)
+
+        # Refresh button
+        refresh_btn = ttk.Button(header_frame, text="Refresh", command=self.refresh_history, style='Dark.TButton')
+        refresh_btn.pack(side=tk.RIGHT)
+
+        # Listbox with scrollbar for transcription list
+        list_frame = tk.Frame(self.history_frame, bg="#121212")
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=5)
+
+        scrollbar = tk.Scrollbar(list_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.history_listbox = tk.Listbox(list_frame,
+                                          font=('Arial', 10),
+                                          bg='#1E1E1E',
+                                          fg='white',
+                                          selectbackground='#333333',
+                                          selectforeground='white',
+                                          yscrollcommand=scrollbar.set,
+                                          height=8)
+        self.history_listbox.pack(fill=tk.BOTH, expand=True)
+        scrollbar.config(command=self.history_listbox.yview)
+
+        # Bind selection event
+        self.history_listbox.bind('<<ListboxSelect>>', self.on_history_select)
+
+        # Selected transcription text display
+        tk.Label(self.history_frame, text="Selected transcription:", font=('Arial', 11), fg='gray', bg="#121212").pack(anchor=tk.W, padx=20, pady=(10, 2))
+
+        self.history_text = tk.Text(self.history_frame,
+                                    height=6,
+                                    wrap=tk.WORD,
+                                    font=('Arial', 10),
+                                    relief=tk.SUNKEN,
+                                    bg='#1E1E1E',
+                                    fg='white',
+                                    insertbackground='white',
+                                    state=tk.DISABLED)
+        self.history_text.pack(fill=tk.X, padx=20, pady=5)
+
+        # Delete button
+        self.delete_btn = ttk.Button(self.history_frame,
+                                     text="Delete Selected",
+                                     command=self.delete_selected_transcription,
+                                     style='Dark.TButton')
+        self.delete_btn.pack(pady=10)
+
+        # Store transcription data
+        self.transcription_data = []
+
+        # Load initial history
+        self.refresh_history()
 
 
         # 3. Settings Tab
@@ -389,6 +488,9 @@ class AudioRecorderApp:
             self.transcription_display.insert(tk.END, "Transcription in progress (this may take a while)...")
             self.transcription_display.config(state=tk.DISABLED)
             
+            # Store the current wav filename for metadata saving
+            self.current_wav_file = WAVE_OUTPUT_FILENAME
+
             # === START TRANSCRIPTION IN A THREAD ===
             transcription_thread = threading.Thread(
                 target=self.run_transcription,
@@ -419,32 +521,103 @@ class AudioRecorderApp:
         """
         try:
             result = self.transcription_queue.get(block=False)
-            
+
             # 1. Update Transcriber tab (main output)
             self.transcription_display.config(state=tk.NORMAL)
             self.transcription_display.delete('1.0', tk.END)
             self.transcription_display.insert(tk.END, result)
             self.transcription_display.config(state=tk.DISABLED)
-            
-            # 2. Update History tab (last output)
-            self.history_display.config(state=tk.NORMAL)
-            self.history_display.delete('1.0', tk.END)
-            self.history_display.insert(tk.END, "Under construction..." + result)
-            self.history_display.config(state=tk.DISABLED)
-            
+
             if "ERROR" in result:
                 logging.warning("Transcription failed with error message.")
                 messagebox.showerror("Transcription Failed", "Transcription returned an error. Check logs for details.")
             else:
+                # Save metadata to JSON file
+                if hasattr(self, 'current_wav_file'):
+                    save_transcription_metadata(self.current_wav_file, result)
+
                 # Copy to clipboard upon successful transcription
-                self.copy_to_clipboard(result) 
-                
-            self.record_button.config(text="Record", state=tk.NORMAL) # Return to normal state
+                self.copy_to_clipboard(result)
+
+                # Refresh history to show new transcription
+                self.refresh_history()
+
+            self.record_button.config(text="Record", state=tk.NORMAL)
 
         except queue.Empty:
             pass
         finally:
             self.master.after(100, self.check_transcription_queue)
+
+    def refresh_history(self):
+        """Refreshes the history listbox with all transcriptions."""
+        self.transcription_data = load_all_transcriptions()
+        self.history_listbox.delete(0, tk.END)
+
+        for item in self.transcription_data:
+            # Format timestamp for display
+            try:
+                dt = datetime.fromisoformat(item.get('timestamp', ''))
+                formatted_date = dt.strftime('%Y-%m-%d %H:%M')
+            except:
+                formatted_date = 'Unknown date'
+
+            # Truncate transcription for list display
+            text = item.get('transcription', '')[:50]
+            if len(item.get('transcription', '')) > 50:
+                text += '...'
+
+            display_text = f"{formatted_date} | {text}"
+            self.history_listbox.insert(tk.END, display_text)
+
+        # Clear the text display
+        self.history_text.config(state=tk.NORMAL)
+        self.history_text.delete('1.0', tk.END)
+        if not self.transcription_data:
+            self.history_text.insert(tk.END, "No transcriptions yet. Record something!")
+        else:
+            self.history_text.insert(tk.END, "Select a transcription to view details.")
+        self.history_text.config(state=tk.DISABLED)
+
+        logging.info(f"History refreshed. Found {len(self.transcription_data)} transcriptions.")
+
+    def on_history_select(self, event):
+        """Handles selection of an item in the history listbox."""
+        selection = self.history_listbox.curselection()
+        if not selection:
+            return
+
+        index = selection[0]
+        if index < len(self.transcription_data):
+            item = self.transcription_data[index]
+            transcription = item.get('transcription', '')
+
+            self.history_text.config(state=tk.NORMAL)
+            self.history_text.delete('1.0', tk.END)
+            self.history_text.insert(tk.END, transcription)
+            self.history_text.config(state=tk.DISABLED)
+
+    def delete_selected_transcription(self):
+        """Deletes the currently selected transcription."""
+        selection = self.history_listbox.curselection()
+        if not selection:
+            messagebox.showwarning("No Selection", "Please select a transcription to delete.")
+            return
+
+        index = selection[0]
+        if index >= len(self.transcription_data):
+            return
+
+        item = self.transcription_data[index]
+        json_path = item.get('json_path', '')
+
+        # Confirm deletion
+        if messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this transcription?\n\nThis will also delete the audio file."):
+            if delete_transcription(json_path):
+                messagebox.showinfo("Deleted", "Transcription deleted successfully.")
+                self.refresh_history()
+            else:
+                messagebox.showerror("Error", "Failed to delete transcription. Check logs for details.")
 
     def on_closing(self):
         """Handles clean application shutdown."""

@@ -18,6 +18,7 @@ SAMPLE_UNDER30S_FILES = [
 SAMPLE_LONGER_FILES = [
     '../sample-audio/test-long-CherryTwinkle.wav',
     '../sample-audio/test-long-Bjorn.mp3',
+    '../sample-audio/output.wav',
 ]
 
 ALL_FILES_TO_PROCESS = SAMPLE_UNDER30S_FILES + SAMPLE_LONGER_FILES
