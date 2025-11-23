@@ -5,6 +5,7 @@ import random
 import string
 import threading
 import re
+from typing import Optional
 
 from rich.console import Console
 from rich.text import Text
@@ -20,9 +21,9 @@ ANIMATION_DELAY = 0.10
 console = Console()
 
 def run_tts_animation(
-    target_text: str, 
-    thread_to_monitor: threading.Thread | None = None, 
-    duration_sec: float | None = None,
+    target_text: str,
+    thread_to_monitor: Optional[threading.Thread] = None,
+    duration_sec: Optional[float] = None,
     text_length: int = 50
 ):
     """

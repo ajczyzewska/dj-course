@@ -6,8 +6,8 @@ from animate import run_tts_animation, console
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
-FILE_PATH = "sample-agent.wav"
-OUTPUT_WAV_PATH = "output.wav"
+FILE_PATH = "output.wav"
+OUTPUT_WAV_PATH = "1output.wav"
 
 GENERATION_DONE = threading.Event() 
 def generate_file_thread(tts_instance, text, file_path, speaker_wav, language):
