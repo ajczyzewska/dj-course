@@ -4,24 +4,24 @@ from datetime import datetime
 from typing import List, Any, Dict, Optional, Tuple
 from files.config import LOG_DIR
 
-def load_session_history(session_id: str) -> Tuple[List[Dict], Optional[str], Optional[str]]:
+def load_session_history(session_id: str) -> Tuple[List[Dict], Optional[str], Optional[str], Optional[str]]:
     """
     Loads session history from a JSON file in universal format.
 
     Returns:
-        Tuple[List[Dict], Optional[str], Optional[str]]: (conversation_history, title, error_message)
+        Tuple[List[Dict], Optional[str], Optional[str], Optional[str]]: (conversation_history, title, assistant_key, error_message)
         History format: [{"role": "user|model", "parts": [{"text": "..."}]}, ...]
     """
 
     log_filename = os.path.join(LOG_DIR, f"{session_id}-log.json")
     if not os.path.exists(log_filename):
-        return [], None, f"Session log file '{log_filename}' does not exist. Starting new session."
+        return [], None, None, f"Session log file '{log_filename}' does not exist. Starting new session."
 
     try:
         with open(log_filename, 'r', encoding='utf-8') as f:
             log_data = json.load(f)
     except json.JSONDecodeError:
-        return [], None, f"Cannot decode log file '{log_filename}'. Starting new session."
+        return [], None, None, f"Cannot decode log file '{log_filename}'. Starting new session."
 
     # Convert JSON data to universal format (dictionaries)
     # This format works with both Gemini and LLaMA clients
@@ -33,12 +33,13 @@ def load_session_history(session_id: str) -> Tuple[List[Dict], Optional[str], Op
         }
         history.append(content)
 
-    # Load title if present
+    # Load title and assistant_key if present
     title = log_data.get('title', None)
+    assistant_key = log_data.get('assistant_key', None)
 
-    return history, title, None
+    return history, title, assistant_key, None
 
-def save_session_history(session_id: str, history: List[Dict], system_prompt: str, model_name: str, title: Optional[str] = None) -> Tuple[bool, Optional[str]]:
+def save_session_history(session_id: str, history: List[Dict], system_prompt: str, model_name: str, title: Optional[str] = None, assistant_key: Optional[str] = None) -> Tuple[bool, Optional[str]]:
     """
     Saves the current session history to a JSON file,
     only if the history contains at least one complete turn (User + Model).
@@ -49,6 +50,7 @@ def save_session_history(session_id: str, history: List[Dict], system_prompt: st
         system_prompt: System prompt used for the assistant
         model_name: Name of the LLM model used
         title: Optional title for the session
+        assistant_key: Optional key identifying the assistant
 
     Returns:
         Tuple[bool, Optional[str]]: (success, error_message)
@@ -80,6 +82,7 @@ def save_session_history(session_id: str, history: List[Dict], system_prompt: st
         'model': model_name,
         'system_role': system_prompt,
         'title': title,
+        'assistant_key': assistant_key,
         'history': json_history
     }
 

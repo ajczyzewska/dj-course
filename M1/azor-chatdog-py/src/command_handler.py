@@ -5,8 +5,9 @@ from commands.session_display import display_full_session
 from commands.session_to_pdf import export_session_to_pdf
 from commands.session_to_audio import export_last_response_to_audio
 from commands.session_remove import remove_session_command
+from assistant import get_assistant, list_assistants, get_all_assistants
 
-VALID_SLASH_COMMANDS = ['/exit', '/quit', '/switch', '/help', '/session', '/pdf', '/audio']
+VALID_SLASH_COMMANDS = ['/exit', '/quit', '/switch', '/help', '/session', '/pdf', '/audio', '/assistant']
 
 def handle_command(user_input: str) -> bool:
     """
@@ -78,7 +79,48 @@ def handle_command(user_input: str) -> bool:
         current = manager.get_current_session()
         export_last_response_to_audio(current.get_history(), current.session_id, current.assistant_name)
 
+    elif command == '/assistant':
+        handle_assistant_command(parts, manager)
+
     return False
+
+
+def handle_assistant_command(parts: list, manager):
+    """Handles /assistant command for switching assistants."""
+    current = manager.get_current_session()
+
+    if len(parts) < 2:
+        # Show list of available assistants
+        console.print_help("\n--- Dostępni asystenci ---")
+        assistants = get_all_assistants()
+        for key, assistant in assistants.items():
+            if key == current.assistant_key:
+                console.print_info(f"  * {key.upper()} - {assistant.name} (aktywny)")
+            else:
+                console.print_help(f"    {key.upper()} - {assistant.name}")
+        console.print_help("\nUżycie: /assistant <nazwa>")
+        console.print_help("--------------------------")
+        return
+
+    assistant_key = parts[1].lower()
+
+    if assistant_key not in list_assistants():
+        console.print_error(f"Błąd: Nieznany asystent '{assistant_key}'.")
+        console.print_help(f"Dostępni asystenci: {', '.join(list_assistants())}")
+        return
+
+    if assistant_key == current.assistant_key:
+        console.print_info(f"Już rozmawiasz z asystentem {current.assistant_name}.")
+        return
+
+    # Switch assistant
+    new_assistant = get_assistant(assistant_key)
+    old_name = current.assistant_name
+    current.switch_assistant(new_assistant, assistant_key)
+
+    console.print_info(f"\n--- Przełączono asystenta ---")
+    console.print_info(f"Z: {old_name} -> Na: {new_assistant.name}")
+    console.print_help(f"Nowy asystent: {new_assistant.name}")
 
 
 def handle_session_subcommand(parts: list, manager):

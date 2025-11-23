@@ -24,7 +24,7 @@ class ChatSession:
     """
     
     def __init__(self, assistant: Assistant, session_id: Optional[str] = None, history: Optional[List[Any]] = None,
-                 interactive_config: bool = True, title: Optional[str] = None):
+                 interactive_config: bool = True, title: Optional[str] = None, assistant_key: Optional[str] = None):
         """
         Initialize a chat session.
 
@@ -34,8 +34,10 @@ class ChatSession:
             history: Initial conversation history. If None, starts empty.
             interactive_config: If True, ask for generation parameters interactively (only for new sessions)
             title: Optional title for the session. If None for new sessions, will be auto-generated.
+            assistant_key: Key identifying the assistant in the registry.
         """
         self.assistant = assistant
+        self._assistant_key = assistant_key or "azor"
         self.session_id = session_id or str(uuid.uuid4())
         self._history = history or []
         self._title = title
@@ -84,12 +86,12 @@ class ChatSession:
         Returns:
             tuple: (ChatSession object or None, error_message or None)
         """
-        history, title, error = session_files.load_session_history(session_id)
+        history, title, assistant_key, error = session_files.load_session_history(session_id)
 
         if error:
             return None, error
 
-        session = cls(assistant=assistant, session_id=session_id, history=history, title=title)
+        session = cls(assistant=assistant, session_id=session_id, history=history, title=title, assistant_key=assistant_key)
         return session, None
     
     def save_to_file(self) -> Tuple[bool, Optional[str]]:
@@ -109,7 +111,8 @@ class ChatSession:
             self._history,
             self.assistant.system_prompt,
             self._llm_client.get_model_name(),
-            self._title
+            self._title,
+            self._assistant_key
         )
     
     def send_message(self, text: str):
@@ -243,6 +246,31 @@ class ChatSession:
             str: The assistant's display name
         """
         return self.assistant.name
+
+    @property
+    def assistant_key(self) -> str:
+        """
+        Gets the key identifying the current assistant.
+
+        Returns:
+            str: The assistant's registry key
+        """
+        return self._assistant_key
+
+    def switch_assistant(self, new_assistant: Assistant, new_key: str):
+        """
+        Switches to a different assistant while preserving history.
+
+        Args:
+            new_assistant: The new Assistant instance to use
+            new_key: The registry key of the new assistant
+        """
+        self.assistant = new_assistant
+        self._assistant_key = new_key
+        # Reinitialize LLM session with new system prompt
+        self._initialize_llm_session()
+        # Save session with new assistant info
+        self.save_to_file()
 
     @property
     def title(self) -> Optional[str]:

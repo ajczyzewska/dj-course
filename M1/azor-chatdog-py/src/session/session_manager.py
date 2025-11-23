@@ -1,7 +1,7 @@
 from typing import Optional, Tuple
 from cli import console
 from .chat_session import ChatSession
-from assistant import create_azor_assistant
+from assistant import create_azor_assistant, get_assistant, list_assistants
 from files import session_files
 
 
@@ -88,9 +88,16 @@ class SessionManager:
             save_attempted = True
             previous_session_id = self._current_session.session_id
             self._current_session.save_to_file()
-        
-        # Load new session
-        assistant = create_azor_assistant()
+
+        # Load session metadata to get assistant_key
+        _, _, assistant_key, _ = session_files.load_session_history(session_id)
+
+        # Get the appropriate assistant based on saved key
+        if assistant_key and assistant_key in list_assistants():
+            assistant = get_assistant(assistant_key)
+        else:
+            assistant = create_azor_assistant()
+
         new_session, error = ChatSession.load_from_file(assistant=assistant, session_id=session_id)
         
         if error:
@@ -138,17 +145,25 @@ class SessionManager:
             ChatSession: The initialized session
         """
         if cli_session_id:
-            assistant = create_azor_assistant()
+            # First, load session metadata to get assistant_key
+            _, _, assistant_key, _ = session_files.load_session_history(cli_session_id)
+
+            # Get the appropriate assistant based on saved key
+            if assistant_key and assistant_key in list_assistants():
+                assistant = get_assistant(assistant_key)
+            else:
+                assistant = create_azor_assistant()
+
             session, error = ChatSession.load_from_file(assistant=assistant, session_id=cli_session_id)
-            
+
             if error:
                 console.print_error(error)
                 # Fallback to new session
                 session = ChatSession(assistant=assistant)
                 console.print_info(f"Rozpoczęto nową sesję z ID: {session.session_id}")
-            
+
             self._current_session = session
-            
+
             console.display_help(session.session_id)
             if not session.is_empty():
                 from commands.session_summary import display_history_summary
