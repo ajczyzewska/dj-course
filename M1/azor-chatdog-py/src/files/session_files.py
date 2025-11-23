@@ -4,24 +4,24 @@ from datetime import datetime
 from typing import List, Any, Dict, Optional, Tuple
 from files.config import LOG_DIR
 
-def load_session_history(session_id: str) -> Tuple[List[Dict], Optional[str]]:
+def load_session_history(session_id: str) -> Tuple[List[Dict], Optional[str], Optional[str]]:
     """
     Loads session history from a JSON file in universal format.
-    
+
     Returns:
-        Tuple[List[Dict], Optional[str]]: (conversation_history, error_message)
+        Tuple[List[Dict], Optional[str], Optional[str]]: (conversation_history, title, error_message)
         History format: [{"role": "user|model", "parts": [{"text": "..."}]}, ...]
     """
-    
+
     log_filename = os.path.join(LOG_DIR, f"{session_id}-log.json")
     if not os.path.exists(log_filename):
-        return [], f"Session log file '{log_filename}' does not exist. Starting new session."
+        return [], None, f"Session log file '{log_filename}' does not exist. Starting new session."
 
     try:
         with open(log_filename, 'r', encoding='utf-8') as f:
             log_data = json.load(f)
     except json.JSONDecodeError:
-        return [], f"Cannot decode log file '{log_filename}'. Starting new session."
+        return [], None, f"Cannot decode log file '{log_filename}'. Starting new session."
 
     # Convert JSON data to universal format (dictionaries)
     # This format works with both Gemini and LLaMA clients
@@ -33,19 +33,23 @@ def load_session_history(session_id: str) -> Tuple[List[Dict], Optional[str]]:
         }
         history.append(content)
 
-    return history, None
+    # Load title if present
+    title = log_data.get('title', None)
 
-def save_session_history(session_id: str, history: List[Dict], system_prompt: str, model_name: str) -> Tuple[bool, Optional[str]]:
+    return history, title, None
+
+def save_session_history(session_id: str, history: List[Dict], system_prompt: str, model_name: str, title: Optional[str] = None) -> Tuple[bool, Optional[str]]:
     """
     Saves the current session history to a JSON file,
     only if the history contains at least one complete turn (User + Model).
-    
+
     Args:
         session_id: Unique identifier for the session
         history: Conversation history to save (universal format: List of dicts)
         system_prompt: System prompt used for the assistant
         model_name: Name of the LLM model used
-    
+        title: Optional title for the session
+
     Returns:
         Tuple[bool, Optional[str]]: (success, error_message)
     """
@@ -63,7 +67,7 @@ def save_session_history(session_id: str, history: List[Dict], system_prompt: st
         else:
             # Fallback for legacy formats
             text_part = getattr(content, 'parts', [{}])[0].get('text', '') if hasattr(content, 'parts') else ""
-        
+
         if text_part:
             json_history.append({
                 'role': content.get('role', '') if isinstance(content, dict) else getattr(content, 'role', ''),
@@ -75,6 +79,7 @@ def save_session_history(session_id: str, history: List[Dict], system_prompt: st
         'session_id': session_id,
         'model': model_name,
         'system_role': system_prompt,
+        'title': title,
         'history': json_history
     }
 
@@ -90,7 +95,7 @@ def list_sessions():
     """Returns a list of available sessions with their metadata."""
     files = os.listdir(LOG_DIR)
     session_ids = sorted([f.replace('-log.json', '') for f in files if f.endswith('-log.json') and f != 'azor-wal.json'])
-    
+
     sessions_data = []
     for sid in session_ids:
         log_path = os.path.join(LOG_DIR, f"{sid}-log.json")
@@ -99,7 +104,8 @@ def list_sessions():
                 log_data = json.load(f)
                 history_len = len(log_data.get('history', []))
                 last_msg_time_str = log_data.get('history', [{}])[-1].get('timestamp', 'Brak daty')
-                
+                title = log_data.get('title', None)
+
                 time_str = 'Brak aktywności'
                 if last_msg_time_str != 'Brak daty':
                     try:
@@ -107,9 +113,10 @@ def list_sessions():
                         time_str = dt.strftime('%Y-%m-%d %H:%M')
                     except ValueError:
                         pass
-            
+
             sessions_data.append({
                 'id': sid,
+                'title': title,
                 'messages_count': history_len,
                 'last_activity': time_str,
                 'error': None
@@ -117,9 +124,10 @@ def list_sessions():
         except Exception:
             sessions_data.append({
                 'id': sid,
+                'title': None,
                 'error': 'BŁĄD ODCZYTU PLIKU'
             })
-    
+
     return sessions_data
 
 def remove_session_file(session_id: str) -> Tuple[bool, Optional[str]]:

@@ -236,7 +236,7 @@ class GeminiLLMClient:
     def ready_for_use_message(self) -> str:
         """
         Returns a ready-to-use message with model info and masked API key.
-        
+
         Returns:
             Formatted message string for display
         """
@@ -245,8 +245,28 @@ class GeminiLLMClient:
             masked_key = "****"
         else:
             masked_key = f"{self.api_key[:4]}...{self.api_key[-4:]}"
-        
+
         return f"✅ Klient Gemini gotowy do użycia (Model: {self.model_name}, Key: {masked_key})"
+
+    def generate_single(self, prompt: str) -> str:
+        """
+        Generates a single response without chat context.
+        Useful for one-off generations like title generation.
+
+        Args:
+            prompt: The prompt to generate a response for
+
+        Returns:
+            Generated text response
+        """
+        if not self._client:
+            raise RuntimeError("LLM client not initialized")
+
+        response = self._client.models.generate_content(
+            model=self.model_name,
+            contents=prompt
+        )
+        return response.text
     
     @property
     def client(self):

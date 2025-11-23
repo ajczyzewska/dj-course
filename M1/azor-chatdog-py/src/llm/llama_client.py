@@ -401,6 +401,35 @@ class LlamaClient:
                 f"   Model: {self.model_name}\n"
                 f"   GPU: {self.n_gpu_layers} warstw, Kontekst: {self.n_ctx}\n"
                 f"   Parametry: temp={self.temperature}, top_p={self.top_p}, top_k={self.top_k}")
+
+    def generate_single(self, prompt: str) -> str:
+        """
+        Generates a single response without chat context.
+        Useful for one-off generations like title generation.
+
+        Args:
+            prompt: The prompt to generate a response for
+
+        Returns:
+            Generated text response
+        """
+        if not self._llama_model:
+            raise RuntimeError("LLaMA model not initialized")
+
+        # Format prompt for Gemma
+        formatted_prompt = f"<start_of_turn>user\n{prompt}<end_of_turn>\n<start_of_turn>model"
+
+        output = self._llama_model(
+            formatted_prompt,
+            max_tokens=100,
+            stop=["<end_of_turn>", "<start_of_turn>"],
+            echo=False,
+            temperature=self.temperature,
+            top_p=self.top_p,
+            top_k=self.top_k,
+        )
+
+        return output["choices"][0]["text"].strip()
     
     @property
     def client(self):

@@ -152,7 +152,7 @@ class SessionManager:
             console.display_help(session.session_id)
             if not session.is_empty():
                 from commands.session_summary import display_history_summary
-                display_history_summary(session.get_history(), session.assistant_name)
+                display_history_summary(session.get_history(), session.assistant_name, session.title)
         else:
             print("Rozpoczynanie nowej sesji.")
             assistant = create_azor_assistant()

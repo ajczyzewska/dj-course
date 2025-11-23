@@ -24,7 +24,7 @@ class ChatSession:
     """
     
     def __init__(self, assistant: Assistant, session_id: Optional[str] = None, history: Optional[List[Any]] = None,
-                 interactive_config: bool = True):
+                 interactive_config: bool = True, title: Optional[str] = None):
         """
         Initialize a chat session.
 
@@ -33,10 +33,12 @@ class ChatSession:
             session_id: Unique session identifier. If None, generates a new UUID.
             history: Initial conversation history. If None, starts empty.
             interactive_config: If True, ask for generation parameters interactively (only for new sessions)
+            title: Optional title for the session. If None for new sessions, will be auto-generated.
         """
         self.assistant = assistant
         self.session_id = session_id or str(uuid.uuid4())
         self._history = history or []
+        self._title = title
         self._llm_client: Optional[Union[GeminiLLMClient, LlamaClient]] = None
         self._llm_chat_session = None
         self._max_context_tokens = 32768
@@ -74,60 +76,65 @@ class ChatSession:
     def load_from_file(cls, assistant: Assistant, session_id: str) -> Tuple[Optional['ChatSession'], Optional[str]]:
         """
         Loads a session from disk.
-        
+
         Args:
             assistant: Assistant instance to use for this session
             session_id: ID of the session to load
-            
+
         Returns:
             tuple: (ChatSession object or None, error_message or None)
         """
-        history, error = session_files.load_session_history(session_id)
-        
+        history, title, error = session_files.load_session_history(session_id)
+
         if error:
             return None, error
-        
-        session = cls(assistant=assistant, session_id=session_id, history=history)
+
+        session = cls(assistant=assistant, session_id=session_id, history=history, title=title)
         return session, None
     
     def save_to_file(self) -> Tuple[bool, Optional[str]]:
         """
         Saves this session to disk.
         Only saves if history has at least one complete exchange.
-        
+
         Returns:
             tuple: (success: bool, error_message: str | None)
         """
         # Sync history from LLM session before saving
         if self._llm_chat_session:
             self._history = self._llm_chat_session.get_history()
-        
+
         return session_files.save_session_history(
-            self.session_id, 
-            self._history, 
-            self.assistant.system_prompt, 
-            self._llm_client.get_model_name()
+            self.session_id,
+            self._history,
+            self.assistant.system_prompt,
+            self._llm_client.get_model_name(),
+            self._title
         )
     
     def send_message(self, text: str):
         """
         Sends a message to the LLM and returns the response.
         Updates internal history automatically and logs to WAL.
-        
+        Generates title automatically on first message.
+
         Args:
             text: User's message
-            
+
         Returns:
             Response object from Google GenAI
         """
         if not self._llm_chat_session:
             raise RuntimeError("LLM session not initialized")
-        
+
+        # Check if this is the first message (before sending)
+        is_first_message = len(self._history) == 0
+
         response = self._llm_chat_session.send_message(text)
-        
+
         # Sync history after message
         self._history = self._llm_chat_session.get_history()
-        
+
         # Log to WAL
         total_tokens = self.count_tokens()
         success, error = append_to_wal(
@@ -137,12 +144,17 @@ class ChatSession:
             total_tokens=total_tokens,
             model_name=self._llm_client.get_model_name()
         )
-        
+
         if not success and error:
             # We don't want to fail the entire message sending because of WAL issues
             # Just log the error to stderr or similar - but for now we'll silently continue
             pass
-        
+
+        # Generate title after first message if not already set
+        if is_first_message and self._title is None:
+            self._title = self._generate_title(text, response.text)
+            console.print_info(f"📝 Tytuł wątku: {self._title}")
+
         return response
     
     def get_history(self) -> List[Any]:
@@ -226,8 +238,55 @@ class ChatSession:
     def assistant_name(self) -> str:
         """
         Gets the display name of the assistant.
-        
+
         Returns:
             str: The assistant's display name
         """
         return self.assistant.name
+
+    @property
+    def title(self) -> Optional[str]:
+        """
+        Gets the session title.
+
+        Returns:
+            str or None: The session title, or None if not set
+        """
+        return self._title
+
+    @title.setter
+    def title(self, value: str):
+        """
+        Sets the session title.
+
+        Args:
+            value: New title for the session
+        """
+        self._title = value
+
+    def _generate_title(self, user_prompt: str, assistant_response: str) -> str:
+        """
+        Generates a short title for the session based on first exchange.
+
+        Args:
+            user_prompt: The user's first message
+            assistant_response: The assistant's first response
+
+        Returns:
+            str: Generated title (max 5 words)
+        """
+        title_prompt = f"""Na podstawie poniższej wymiany wygeneruj krótki tytuł (maksymalnie 5 słów) opisujący temat rozmowy.
+
+User: {user_prompt[:500]}
+Assistant: {assistant_response[:500]}
+
+Odpowiedz TYLKO tytułem, bez cudzysłowów, bez dodatkowego tekstu, bez kropki na końcu."""
+
+        try:
+            # Use the LLM client to generate title
+            title_response = self._llm_client.generate_single(title_prompt)
+            return title_response.strip().strip('"').strip("'").rstrip('.')
+        except Exception:
+            # Fallback: use first few words of user prompt
+            words = user_prompt.split()[:5]
+            return ' '.join(words)
