@@ -17,10 +17,98 @@
             justify-content: center;
         }
 
+        .main-container {
+            width: 100%;
+            max-width: 1400px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .filters-container {
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .filter-group label {
+            font-size: 14px;
+            font-weight: 600;
+            opacity: 0.9;
+        }
+
+        .filter-group select,
+        .filter-group input {
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            font-size: 14px;
+            outline: none;
+        }
+
+        .filter-group select:focus,
+        .filter-group input:focus {
+            border-color: rgba(255, 255, 255, 0.6);
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: none;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background 0.2s;
+            font-weight: 600;
+        }
+
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .btn-primary {
+            background: rgba(76, 175, 80, 0.7);
+        }
+
+        .btn-primary:hover {
+            background: rgba(76, 175, 80, 0.9);
+        }
+
+        .btn-danger {
+            background: rgba(244, 67, 54, 0.7);
+        }
+
+        .btn-danger:hover {
+            background: rgba(244, 67, 54, 0.9);
+        }
+
         .container {
             text-align: center;
             width: 100%;
-            max-width: 1200px;
             padding: 40px;
             background: rgba(255, 255, 255, 0.1);
             border-radius: 20px;
@@ -139,10 +227,45 @@
         .scrollbar::-webkit-scrollbar-thumb:hover {
             background: rgba(255, 255, 255, 0.5);
         }
+
+        #fileInput {
+            display: none;
+        }
     </style>
 </head>
 <body>
-    <div class="container">
+    <div class="main-container">
+        <div class="filters-container">
+            <div class="filter-group">
+                <label for="periodType">Okres:</label>
+                <select id="periodType">
+                    <option value="all">Wszystkie dane</option>
+                    <option value="day">Dzień</option>
+                    <option value="week">Tydzień</option>
+                    <option value="month">Miesiąc</option>
+                    <option value="custom">Zakres dat</option>
+                </select>
+            </div>
+
+            <div class="filter-group" id="dateRangeGroup" style="display: none;">
+                <label for="startDate">Od:</label>
+                <input type="date" id="startDate">
+            </div>
+
+            <div class="filter-group" id="dateRangeGroupEnd" style="display: none;">
+                <label for="endDate">Do:</label>
+                <input type="date" id="endDate">
+            </div>
+
+            <div class="action-buttons">
+                <button id="applyFilter" class="btn btn-primary">Zastosuj filtr</button>
+                <button id="exportData" class="btn">Eksportuj JSON</button>
+                <button id="importData" class="btn">Importuj JSON</button>
+                <input type="file" id="fileInput" accept=".json">
+            </div>
+        </div>
+
+        <div class="container">
         <div class="stats-column">
             <h1>📊 Time Statistics</h1>
             <h2>Time spent per domain</h2>
@@ -166,9 +289,11 @@
                 ❌ Clear "Gotcha" Statistics
             </div>
         </div>
+        </div>
     </div>
 
     <script src="chart.min.js"></script>
+    <script src="stats-utils.js"></script>
     <script src="stats.js"></script>
 </body>
 </html> 

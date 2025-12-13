@@ -17,7 +17,7 @@ function initializeExtension() {
     console.log('initialize')
 
     // Initialize storage
-    chrome.storage.local.get(['timeData', 'currentSessionTime', 'gotchaStats'], function(result) {
+    chrome.storage.local.get(['timeData', 'currentSessionTime', 'gotchaStats', 'timeDataWithTimestamps'], function(result) {
         if (!result.timeData) {
             chrome.storage.local.set({timeData: {}});
         }
@@ -26,6 +26,9 @@ function initializeExtension() {
         }
         if (!result.gotchaStats) {
             chrome.storage.local.set({gotchaStats: {}});
+        }
+        if (!result.timeDataWithTimestamps) {
+            chrome.storage.local.set({timeDataWithTimestamps: []});
         }
     });
 
@@ -69,17 +72,42 @@ function trackActiveTab() {
 }
 
 function updateTime(domain) {
-    chrome.storage.local.get(['timeData', 'currentSessionTime'], (result) => {
+    chrome.storage.local.get(['timeData', 'currentSessionTime', 'timeDataWithTimestamps'], (result) => {
         const timeData = result.timeData || {};
         const currentSessionTime = result.currentSessionTime || 0;
+        const timeDataWithTimestamps = result.timeDataWithTimestamps || [];
 
         timeData[domain] = (timeData[domain] || 0) + 1;
 
+        // Add timestamp entry
+        const now = new Date();
+        const entry = {
+            domain: domain,
+            seconds: 1,
+            timestamp: now.getTime(),
+            date: now.toISOString().split('T')[0], // YYYY-MM-DD
+            year: now.getFullYear(),
+            month: now.getMonth() + 1,
+            week: getWeekNumber(now),
+            day: now.getDate(),
+            hour: now.getHours()
+        };
+        timeDataWithTimestamps.push(entry);
+
         chrome.storage.local.set({
             timeData: timeData,
-            currentSessionTime: currentSessionTime + 1
+            currentSessionTime: currentSessionTime + 1,
+            timeDataWithTimestamps: timeDataWithTimestamps
         });
     });
+}
+
+function getWeekNumber(date) {
+    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    const dayNum = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
 }
 
 function loadSettingsFromStorage() {
@@ -121,7 +149,19 @@ function updateIconBadge() {
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     console.log('tabs onUpdated', { changeInfo, tab })
 
-    if (!changeInfo.url) {
+    // Check when URL changes or when loading starts
+    if (!changeInfo.url && changeInfo.status !== 'loading') {
+        return;
+    }
+
+    // Get the URL from changeInfo or tab
+    const urlToCheck = changeInfo.url || tab.url;
+    if (!urlToCheck) {
+        return;
+    }
+
+    // Skip chrome:// and extension pages
+    if (urlToCheck.startsWith('chrome://') || urlToCheck.startsWith('chrome-extension://')) {
         return;
     }
 
@@ -129,28 +169,38 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         const isBlocking = result.isBlocking === undefined ? true : result.isBlocking;
         const blockedWebsites = result.blockedWebsites || [];
 
+        console.log('Blocking check:', { isBlocking, blockedWebsites, url: urlToCheck });
+
         if (!isBlocking) {
             return;
         }
 
-        const url = new URL(changeInfo.url);
-        const domain = url.hostname;
+        try {
+            const url = new URL(urlToCheck);
+            const domain = url.hostname;
 
-        const isBlocked = blockedWebsites.some(blockedSite => {
-            if (blockedSite.startsWith('*.')) {
-                return domain.endsWith(blockedSite.substring(2));
-            }
-            return domain === blockedSite;
-        });
-
-        if (isBlocked) {
-            chrome.tabs.update(tabId, { url: chrome.runtime.getURL('blocked.html') });
-            
-            chrome.storage.local.get('gotchaStats', (result) => {
-                const stats = result.gotchaStats || {};
-                stats[domain] = (stats[domain] || 0) + 1;
-                chrome.storage.local.set({ gotchaStats: stats });
+            const isBlocked = blockedWebsites.some(blockedSite => {
+                if (blockedSite.startsWith('*.')) {
+                    const baseDomain = blockedSite.substring(2);
+                    return domain === baseDomain || domain.endsWith('.' + baseDomain);
+                }
+                return domain === blockedSite;
             });
+
+            console.log('Domain check:', { domain, isBlocked });
+
+            if (isBlocked) {
+                console.log('Blocking domain:', domain);
+                chrome.tabs.update(tabId, { url: chrome.runtime.getURL('blocked.html') });
+
+                chrome.storage.local.get('gotchaStats', (result) => {
+                    const stats = result.gotchaStats || {};
+                    stats[domain] = (stats[domain] || 0) + 1;
+                    chrome.storage.local.set({ gotchaStats: stats });
+                });
+            }
+        } catch (error) {
+            console.log('Error parsing URL:', urlToCheck, error);
         }
     });
 });
@@ -159,18 +209,22 @@ function monitorIfBlocked() {
     chrome.storage.local.get(['isBlocking', 'blockedWebsites'], (result) => {
         const isBlocking = result.isBlocking === undefined ? true : result.isBlocking;
         const blockedWebsites = result.blockedWebsites || [];
-        if (!isBlocking) {
+        if (!isBlocking || blockedWebsites.length === 0) {
             return;
         }
 
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
             if (!tabs || tabs.length === 0 || !tabs[0].url) {
                 return;
             }
 
             const tab = tabs[0];
             const blockedPageUrl = chrome.runtime.getURL('blocked.html');
-            if (tab.url.startsWith(blockedPageUrl)) {
+
+            // Skip if already on blocked page or chrome:// pages
+            if (tab.url.startsWith(blockedPageUrl) ||
+                tab.url.startsWith('chrome://') ||
+                tab.url.startsWith('chrome-extension://')) {
                 return;
             }
 
@@ -180,7 +234,8 @@ function monitorIfBlocked() {
 
                 const isBlocked = blockedWebsites.some(blockedSite => {
                     if (blockedSite.startsWith('*.')) {
-                        return domain.endsWith(blockedSite.substring(2));
+                        const baseDomain = blockedSite.substring(2);
+                        return domain === baseDomain || domain.endsWith('.' + baseDomain);
                     }
                     return domain === blockedSite;
                 });
