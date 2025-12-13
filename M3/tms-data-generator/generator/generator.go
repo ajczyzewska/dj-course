@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"tms-data-generator/generator/availability"
 	"tms-data-generator/generator/config"
 	"tms-data-generator/generator/customers"
 	"tms-data-generator/generator/drivers"
@@ -49,6 +50,8 @@ func Generate(outputFile string) error {
 	var vehiclesStatements string
 	var driversStatements string
 	var customersStatements string
+	var vehiclesList []vehicles.Vehicle
+	var driversList []drivers.Driver
 	wg := sync.WaitGroup{}
 
 	start := time.Now() // Start timing
@@ -59,14 +62,16 @@ func Generate(outputFile string) error {
 		defer wg.Done()
 		startVehicles := time.Now()
 		fmt.Println("Generating vehicles...", time.Now())
-		vehiclesStatements = vehicles.GenerateInsertStatements(vehicles.GenerateVehicles(config.VEHICLES))
+		vehiclesList = vehicles.GenerateVehicles(config.VEHICLES)
+		vehiclesStatements = vehicles.GenerateInsertStatements(vehiclesList)
 		fmt.Println("done generating vehicles", time.Now(), time.Since(startVehicles))
 	}()
 	go func() {
 		defer wg.Done()
 		startDrivers := time.Now()
 		fmt.Println("Generating drivers...", time.Now())
-		driversStatements = drivers.GenerateInsertStatements(drivers.GenerateDrivers(config.DRIVERS))
+		driversList = drivers.GenerateDrivers(config.DRIVERS)
+		driversStatements = drivers.GenerateInsertStatements(driversList)
 		fmt.Println("done generating drivers", time.Now(), time.Since(startDrivers))
 	}()
 	go func() {
@@ -105,7 +110,31 @@ func Generate(outputFile string) error {
 	timelineEvents := transportation_orders.GenerateOrderTimelineEvents(ordersList)
 	fmt.Println("done generating timeline events", time.Now(), time.Since(startTimeline))
 
-	// Phase 6: Generate SQL statements
+	// Phase 6: Generate availability data in parallel
+	var driverAvailabilityStatements string
+	var vehicleAvailabilityStatements string
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		startDriverAvail := time.Now()
+		fmt.Println("Generating driver availability...", time.Now())
+		driverAvailability := availability.GenerateDriverAvailability(driversList, config.AVAILABILITY_DAYS)
+		driverAvailabilityStatements = availability.GenerateDriverAvailabilityInsertStatements(driverAvailability)
+		fmt.Println("done generating driver availability", time.Now(), time.Since(startDriverAvail))
+	}()
+	go func() {
+		defer wg.Done()
+		startVehicleAvail := time.Now()
+		fmt.Println("Generating vehicle availability...", time.Now())
+		vehicleAvailability := availability.GenerateVehicleAvailability(vehiclesList, config.AVAILABILITY_DAYS)
+		vehicleAvailabilityStatements = availability.GenerateVehicleAvailabilityInsertStatements(vehicleAvailability)
+		fmt.Println("done generating vehicle availability", time.Now(), time.Since(startVehicleAvail))
+	}()
+
+	fmt.Println("Waiting for availability generation...", time.Now())
+	wg.Wait()
+
+	// Phase 7: Generate SQL statements
 	startSQL := time.Now()
 	fmt.Println("Generating SQL statements...", time.Now())
 	ordersStatements := transportation_orders.GenerateInsertStatements(ordersList)
@@ -127,6 +156,8 @@ func Generate(outputFile string) error {
 	sb.WriteString(ordersStatements)
 	sb.WriteString(timelineStatements)
 	sb.WriteString(itemsStatements)
+	sb.WriteString(driverAvailabilityStatements)
+	sb.WriteString(vehicleAvailabilityStatements)
 
 	err = os.WriteFile(outputFile, []byte(sb.String()), 0644)
 	if err != nil {

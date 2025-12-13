@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "azor": {
+      "command": "python",
+      "args": ["-m", "azor_mcp.server"],
+      "env": {
+        "PATH": "/Users/agnieszka/repos/dj/dj-course/M3/azor-mcp-server/.venv/bin:/usr/local/bin:/usr/bin:/bin",
+        "PYTHONPATH": "/Users/agnieszka/repos/dj/dj-course/M3/azor-mcp-server/src"
+      }
+    }
+  }
+}

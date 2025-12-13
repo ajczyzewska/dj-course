@@ -1,6 +1,107 @@
 document.addEventListener('DOMContentLoaded', () => {
     displayStats();
+    setupFilters();
 });
+
+let currentFilter = {
+    periodType: 'all',
+    startDate: null,
+    endDate: null
+};
+
+function setupFilters() {
+    const periodTypeSelect = document.getElementById('periodType');
+    const dateRangeGroup = document.getElementById('dateRangeGroup');
+    const dateRangeGroupEnd = document.getElementById('dateRangeGroupEnd');
+    const applyFilterBtn = document.getElementById('applyFilter');
+    const exportDataBtn = document.getElementById('exportData');
+    const importDataBtn = document.getElementById('importData');
+    const fileInput = document.getElementById('fileInput');
+
+    periodTypeSelect.addEventListener('change', (e) => {
+        const showDateRange = e.target.value === 'custom';
+        dateRangeGroup.style.display = showDateRange ? 'flex' : 'none';
+        dateRangeGroupEnd.style.display = showDateRange ? 'flex' : 'none';
+    });
+
+    applyFilterBtn.addEventListener('click', () => {
+        currentFilter.periodType = periodTypeSelect.value;
+        currentFilter.startDate = document.getElementById('startDate').value;
+        currentFilter.endDate = document.getElementById('endDate').value;
+        updateStatsWithFilter();
+    });
+
+    exportDataBtn.addEventListener('click', exportStats);
+    importDataBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', importStats);
+}
+
+function exportStats() {
+    chrome.storage.local.get(['timeDataWithTimestamps', 'timeData', 'gotchaStats'], (result) => {
+        const exportData = {
+            timeDataWithTimestamps: result.timeDataWithTimestamps || [],
+            timeData: result.timeData || {},
+            gotchaStats: result.gotchaStats || {}
+        };
+
+        const jsonString = exportToJSON(exportData);
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `developer-distractor-stats-${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    });
+}
+
+function importStats(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const validation = validateImportJSON(e.target.result);
+
+        if (!validation.valid) {
+            alert('Błąd importu: ' + validation.error);
+            return;
+        }
+
+        const importedData = validation.data;
+
+        chrome.storage.local.get(['timeDataWithTimestamps', 'timeData', 'gotchaStats'], (result) => {
+            const mergedTimestamps = mergeTimeData(
+                result.timeDataWithTimestamps || [],
+                importedData.timeDataWithTimestamps || []
+            );
+
+            const mergedTimeData = {
+                ...(result.timeData || {}),
+                ...(importedData.timeData || {})
+            };
+
+            const mergedGotchaStats = {
+                ...(result.gotchaStats || {}),
+                ...(importedData.gotchaStats || {})
+            };
+
+            chrome.storage.local.set({
+                timeDataWithTimestamps: mergedTimestamps,
+                timeData: mergedTimeData,
+                gotchaStats: mergedGotchaStats
+            }, () => {
+                alert('Statystyki zaimportowane pomyślnie!');
+                updateStatsWithFilter();
+            });
+        });
+    };
+
+    reader.readAsText(file);
+    event.target.value = '';
+}
 
 function displayStats() {
     document.title = 'Time Statistics - Developer Distractor Destroyer';
@@ -24,12 +125,51 @@ function displayStats() {
         return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     }
 
-    function updateStats() {
-        chrome.storage.local.get(['timeData', 'gotchaStats'], (result) => {
-            // Time Stats
-            timeStatsList.innerHTML = '';
-            const timeData = result.timeData || {};
-            const sortedTimeSites = Object.entries(timeData).sort((a, b) => b[1] - a[1]);
+    function updateStatsWithFilter() {
+        chrome.storage.local.get(['timeDataWithTimestamps', 'timeData', 'gotchaStats'], (result) => {
+            let filteredData = result.timeDataWithTimestamps || [];
+
+            if (currentFilter.periodType === 'custom' && currentFilter.startDate && currentFilter.endDate) {
+                filteredData = filterByDateRange(filteredData, currentFilter.startDate, currentFilter.endDate);
+            } else if (currentFilter.periodType === 'day') {
+                const today = new Date().toISOString().split('T')[0];
+                filteredData = filteredData.filter(entry => entry.date === today);
+            } else if (currentFilter.periodType === 'week') {
+                const now = new Date();
+                const currentWeek = getWeekNumber(now);
+                const currentYear = now.getFullYear();
+                filteredData = filteredData.filter(entry => entry.week === currentWeek && entry.year === currentYear);
+            } else if (currentFilter.periodType === 'month') {
+                const now = new Date();
+                const currentMonth = now.getMonth() + 1;
+                const currentYear = now.getFullYear();
+                filteredData = filteredData.filter(entry => entry.month === currentMonth && entry.year === currentYear);
+            }
+
+            const timeData = getTotalsByDomain(filteredData);
+            updateStats(timeData, result.gotchaStats || {});
+        });
+    }
+
+    function getWeekNumber(date) {
+        const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+        const dayNum = d.getUTCDay() || 7;
+        d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+        const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+        return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+    }
+
+    function updateStats(timeData = null, gotchaData = null) {
+        if (timeData === null || gotchaData === null) {
+            chrome.storage.local.get(['timeData', 'gotchaStats'], (result) => {
+                updateStats(result.timeData || {}, result.gotchaStats || {});
+            });
+            return;
+        }
+
+        // Time Stats
+        timeStatsList.innerHTML = '';
+        const sortedTimeSites = Object.entries(timeData).sort((a, b) => b[1] - a[1]);
     
             if (sortedTimeSites.length === 0) {
                 timeStatsList.innerHTML = '<div class="stat-item">No time tracking data yet.</div>';
@@ -43,10 +183,9 @@ function displayStats() {
                 renderPieChart(sortedTimeSites);
             }
 
-            // Gotcha Stats
-            gotchaStatsList.innerHTML = '';
-            const gotchaData = result.gotchaStats || {};
-            const sortedGotchaSites = Object.entries(gotchaData).sort((a, b) => b[1] - a[1]);
+        // Gotcha Stats
+        gotchaStatsList.innerHTML = '';
+        const sortedGotchaSites = Object.entries(gotchaData).sort((a, b) => b[1] - a[1]);
 
             if (sortedGotchaSites.length === 0) {
                 gotchaStatsList.innerHTML = '<div class="stat-item">No "gotcha" data yet.</div>';
@@ -59,7 +198,6 @@ function displayStats() {
                 });
                 renderGotchaChart(sortedGotchaSites);
             }
-        });
     }
 
     function removeStatEntry(statType, siteToRemove) {
