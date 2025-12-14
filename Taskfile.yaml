@@ -1,0 +1,17 @@
+version: '3'
+
+tasks:
+  run-go:
+    desc: Run the data generator directly with 'go run'
+    cmds:
+      - go run ./cmd/tms-data-generator
+
+  server:
+    desc: Run the application in server mode
+    cmds:
+      - go run ./cmd/tms-data-generator -server -port 8080
+
+  clean:
+    desc: Remove bin and output directories
+    cmds:
+      - rm -rf ./bin ./output
