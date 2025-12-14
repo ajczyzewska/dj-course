@@ -5,7 +5,8 @@ Encapsulates all Google Gemini AI interactions.
 
 import os
 import sys
-from typing import Optional, List, Any, Dict
+import json
+from typing import Optional, List, Any, Dict, Callable
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
@@ -16,28 +17,92 @@ class GeminiChatSessionWrapper:
     """
     Wrapper for Gemini chat session that provides universal dictionary-based history format.
     This ensures compatibility with LlamaClient's history format.
+    Supports function calling.
     """
-    
-    def __init__(self, gemini_session):
+
+    def __init__(self, gemini_session, tools_map: Optional[Dict[str, Callable]] = None):
         """
         Initialize wrapper with Gemini chat session.
-        
+
         Args:
             gemini_session: The actual Gemini chat session object
+            tools_map: Dictionary mapping tool names to callable functions
         """
         self.gemini_session = gemini_session
-    
+        self.tools_map = tools_map or {}
+
     def send_message(self, text: str) -> Any:
         """
-        Forwards message to Gemini session.
-        
+        Forwards message to Gemini session with function calling support.
+
         Args:
             text: User's message
-            
+
         Returns:
             Response object from Gemini
         """
-        return self.gemini_session.send_message(text)
+        response = self.gemini_session.send_message(text)
+
+        # Handle function calls if present
+        if hasattr(response, 'candidates') and response.candidates:
+            candidate = response.candidates[0]
+            if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                # Check for function calls in the response
+                for part in candidate.content.parts:
+                    if hasattr(part, 'function_call') and part.function_call:
+                        # Execute the function call
+                        response = self._handle_function_call(part.function_call)
+
+        return response
+
+    def _handle_function_call(self, function_call):
+        """
+        Handle function call from the model.
+
+        Args:
+            function_call: FunctionCall object from Gemini
+
+        Returns:
+            Response from the model after function execution
+        """
+        function_name = function_call.name
+        function_args = dict(function_call.args) if hasattr(function_call, 'args') else {}
+
+        console.print_info(f"🔧 Wywołanie narzędzia: {function_name}({json.dumps(function_args, ensure_ascii=False)})")
+
+        # Execute the tool function
+        if function_name in self.tools_map:
+            try:
+                tool_function = self.tools_map[function_name]
+                result = tool_function(**function_args)
+                console.print_info(f"✅ Narzędzie {function_name} wykonane")
+
+                # Send function result back to the model
+                function_response = types.Part.from_function_response(
+                    name=function_name,
+                    response={"result": result}
+                )
+
+                # Continue the conversation with the function result
+                return self.gemini_session.send_message(function_response)
+            except Exception as e:
+                error_msg = f"Error executing {function_name}: {str(e)}"
+                console.print_error(f"❌ {error_msg}")
+
+                # Send error back to the model
+                function_response = types.Part.from_function_response(
+                    name=function_name,
+                    response={"error": error_msg}
+                )
+                return self.gemini_session.send_message(function_response)
+        else:
+            error_msg = f"Unknown function: {function_name}"
+            console.print_error(f"❌ {error_msg}")
+            function_response = types.Part.from_function_response(
+                name=function_name,
+                response={"error": error_msg}
+            )
+            return self.gemini_session.send_message(function_response)
     
     def get_history(self) -> List[Dict]:
         """
@@ -143,24 +208,28 @@ class GeminiLLMClient:
             console.print_error(f"Błąd inicjalizacji klienta Gemini: {e}")
             sys.exit(1)
     
-    def create_chat_session(self, 
-                          system_instruction: str, 
+    def create_chat_session(self,
+                          system_instruction: str,
                           history: Optional[List[Dict]] = None,
-                          thinking_budget: int = 0) -> GeminiChatSessionWrapper:
+                          thinking_budget: int = 0,
+                          tools: Optional[List[Dict]] = None,
+                          tools_map: Optional[Dict[str, Callable]] = None) -> GeminiChatSessionWrapper:
         """
         Creates a new chat session with the specified configuration.
-        
+
         Args:
             system_instruction: System role/prompt for the assistant
             history: Previous conversation history (optional, in universal dict format)
             thinking_budget: Thinking budget for the model
-            
+            tools: List of tool definitions for function calling
+            tools_map: Dictionary mapping tool names to callable functions
+
         Returns:
             GeminiChatSessionWrapper with universal dictionary-based interface
         """
         if not self._client:
             raise RuntimeError("LLM client not initialized")
-        
+
         # Convert universal dict format to Gemini Content objects
         gemini_history = []
         if history:
@@ -173,17 +242,38 @@ class GeminiLLMClient:
                             parts=[types.Part.from_text(text=text)]
                         )
                         gemini_history.append(content)
-        
+
+        # Convert tool definitions to Gemini Tool objects
+        gemini_tools = None
+        if tools:
+            function_declarations = []
+            for tool in tools:
+                # Convert tool dict to FunctionDeclaration
+                func_decl = types.FunctionDeclaration(
+                    name=tool['name'],
+                    description=tool['description'],
+                    parameters=tool.get('parameters', {})
+                )
+                function_declarations.append(func_decl)
+
+            gemini_tools = [types.Tool(function_declarations=function_declarations)]
+
+        # Create config with tools if provided
+        config_params = {
+            "system_instruction": system_instruction,
+            "thinking_config": types.ThinkingConfig(thinking_budget=thinking_budget)
+        }
+
+        if gemini_tools:
+            config_params["tools"] = gemini_tools
+
         gemini_session = self._client.chats.create(
             model=self.model_name,
             history=gemini_history,
-            config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                thinking_config=types.ThinkingConfig(thinking_budget=thinking_budget)
-            )
+            config=types.GenerateContentConfig(**config_params)
         )
-        
-        return GeminiChatSessionWrapper(gemini_session)
+
+        return GeminiChatSessionWrapper(gemini_session, tools_map=tools_map)
     
     def count_history_tokens(self, history: List[Dict]) -> int:
         """

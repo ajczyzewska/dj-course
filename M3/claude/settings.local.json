@@ -7,7 +7,8 @@
       "Bash(npx:*)",
       "Bash(chmod:*)",
       "Bash(source .venv/bin/activate)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(pip show:*)"
     ],
     "deny": [],
     "ask": []

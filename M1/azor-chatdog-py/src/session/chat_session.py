@@ -7,6 +7,7 @@ from llm.gemini_client import GeminiLLMClient
 from llm.llama_client import LlamaClient
 from assistant import Assistant
 from cli import console
+from tools.mcp_tools import TOOLS_DEFINITIONS, TOOLS_MAP
 
 # Context token limit
 
@@ -67,11 +68,21 @@ class ChatSession:
             self._llm_client = SelectedClientClass.from_environment(interactive=self._interactive_config)
             console.print_info(self._llm_client.ready_for_use_message())
         
-        self._llm_chat_session = self._llm_client.create_chat_session(
-            system_instruction=self.assistant.system_prompt,
-            history=self._history,
-            thinking_budget=0
-        )
+        # Add tools only for Gemini (LlamaClient doesn't support tools parameter)
+        if isinstance(self._llm_client, GeminiLLMClient):
+            self._llm_chat_session = self._llm_client.create_chat_session(
+                system_instruction=self.assistant.system_prompt,
+                history=self._history,
+                thinking_budget=0,
+                tools=TOOLS_DEFINITIONS,
+                tools_map=TOOLS_MAP
+            )
+        else:
+            self._llm_chat_session = self._llm_client.create_chat_session(
+                system_instruction=self.assistant.system_prompt,
+                history=self._history,
+                thinking_budget=0
+            )
     
     
     @classmethod
