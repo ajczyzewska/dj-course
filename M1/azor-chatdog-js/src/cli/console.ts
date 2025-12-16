@@ -62,7 +62,7 @@ export function displayHelp(sessionId?: string): void {
     printInfo(`Aktualna sesja (ID): ${sessionId}`);
   }
   printHelp('Dostępne komendy (slash commands):');
-  printHelp('  /switch <ID>      - Przełącza na istniejącą sesję.');
+  printHelp('  /switch [ID]      - Przełącza na istniejącą sesję (bez ID pokazuje interaktywny dropdown).');
   printHelp('  /help             - Wyświetla tę pomoc.');
   printHelp('  /exit, /quit      - Zakończenie czatu.');
   printHelp('\n  /session list     - Wyświetla listę dostępnych sesji.');

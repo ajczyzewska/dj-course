@@ -58,7 +58,7 @@ def display_help(session_id: str):
     print_info(f"Aktualna sesja (ID): {session_id}")
     print_info(f"Pliki sesji są zapisywane na bieżąco w: {LOG_DIR}")
     print_help("Dostępne komendy (slash commands):")
-    print_help("  /switch <ID>      - Przełącza na istniejącą sesję.")
+    print_help("  /switch [ID]      - Przełącza na istniejącą sesję (bez ID pokazuje interaktywny dropdown).")
     print_help("  /help             - Wyświetla tę pomoc.")
     print_help("  /exit, /quit      - Zakończenie czatu.")
     print_help("\n  /session list     - Wyświetla listę dostępnych sesji.")

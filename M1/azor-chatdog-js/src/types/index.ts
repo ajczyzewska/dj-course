@@ -35,6 +35,7 @@ export interface SessionHistoryFile {
   model: string;
   system_role: string;
   history: TimestampedMessage[];
+  title?: string;
 }
 
 /**
@@ -58,6 +59,7 @@ export interface SessionMetadata {
   message_count: number;
   last_modified: Date;
   first_message?: string;
+  title?: string;
 }
 
 /**
@@ -84,6 +86,19 @@ export type Result<T, E = string> =
   | { success: false; error: E };
 
 /**
+ * Tool definition for function calling
+ */
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters: {
+    type: string;
+    properties: Record<string, any>;
+    required: string[];
+  };
+}
+
+/**
  * LLM Client interface - implemented by both Gemini and LLaMA clients
  */
 export interface ILLMClient {
@@ -93,7 +108,9 @@ export interface ILLMClient {
   createChatSession(
     systemInstruction: string,
     history?: Message[],
-    thinkingBudget?: number
+    thinkingBudget?: number,
+    tools?: ToolDefinition[],
+    toolsMap?: Record<string, (args: any) => Promise<string>>
   ): ILLMChatSession;
 
   /**

@@ -8,7 +8,8 @@
       "Bash(chmod:*)",
       "Bash(source .venv/bin/activate)",
       "Bash(python:*)",
-      "Bash(pip show:*)"
+      "Bash(pip show:*)",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "ask": []

@@ -8,6 +8,7 @@ from llm.llama_client import LlamaClient
 from assistant import Assistant
 from cli import console
 from tools.mcp_tools import TOOLS_DEFINITIONS, TOOLS_MAP
+from tools.clarification_tool import CLARIFICATION_TOOL_DEFINITION, CLARIFICATION_TOOLS_MAP
 
 # Context token limit
 
@@ -70,12 +71,20 @@ class ChatSession:
         
         # Add tools only for Gemini (LlamaClient doesn't support tools parameter)
         if isinstance(self._llm_client, GeminiLLMClient):
+            # Combine all tools and tools maps
+            all_tools = TOOLS_DEFINITIONS + [CLARIFICATION_TOOL_DEFINITION]
+            all_tools_map = {**TOOLS_MAP, **CLARIFICATION_TOOLS_MAP}
+
+            # Debug: Show loaded tools (helpful for verification)
+            tool_names = [t['name'] for t in all_tools]
+            console.print_info(f"🔧 Załadowano narzędzia: {', '.join(tool_names)}")
+
             self._llm_chat_session = self._llm_client.create_chat_session(
                 system_instruction=self.assistant.system_prompt,
                 history=self._history,
                 thinking_budget=0,
-                tools=TOOLS_DEFINITIONS,
-                tools_map=TOOLS_MAP
+                tools=all_tools,
+                tools_map=all_tools_map
             )
         else:
             self._llm_chat_session = self._llm_client.create_chat_session(

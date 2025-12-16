@@ -6,6 +6,7 @@ import { displayHelp, printError, printInfo, printSuccess } from './cli/console.
 import { displaySessionList } from './commands/sessionList.js';
 import { displaySessionHistory } from './commands/sessionDisplay.js';
 import { removeCurrentSession } from './commands/sessionRemove.js';
+import { selectSessionInteractive } from './commands/sessionSwitch.js';
 import type { SessionManager } from './session/sessionManager.js';
 
 /**
@@ -24,10 +25,10 @@ const VALID_SLASH_COMMANDS = [
  * Handle a slash command
  * @returns true if should exit, false otherwise
  */
-export function handleCommand(
+export async function handleCommand(
   userInput: string,
   manager: SessionManager
-): boolean {
+): Promise<boolean> {
   const parts = userInput.trim().split(/\s+/);
   const command = parts[0].toLowerCase();
   const args = parts.slice(1);
@@ -55,25 +56,7 @@ export function handleCommand(
       return false;
 
     case '/switch':
-      if (args.length === 0) {
-        printError('Usage: /switch <SESSION_ID>');
-      } else {
-        const sessionId = args[0];
-        const result = manager.switchToSession(sessionId);
-
-        if (result.loadSuccessful) {
-          printSuccess(`Switched to session ${sessionId}`);
-          if (result.hasHistory) {
-            const session = result.session;
-            const tokenInfo = session.getTokenInfo();
-            printInfo(
-              `Session has ${session.getHistory().length} messages (${tokenInfo.total} tokens)`
-            );
-          }
-        } else {
-          printError(`Failed to switch: ${result.error}`);
-        }
-      }
+      await handleSwitchCommand(args, manager);
       return false;
 
     case '/pdf':
@@ -83,6 +66,49 @@ export function handleCommand(
     default:
       printError(`Unknown command: ${command}`);
       return false;
+  }
+}
+
+/**
+ * Handle /switch command with interactive dropdown
+ */
+async function handleSwitchCommand(
+  args: string[],
+  manager: SessionManager
+): Promise<void> {
+  let sessionId: string | null = null;
+
+  // If session ID provided as argument, use it directly
+  if (args.length > 0) {
+    sessionId = args[0];
+  } else {
+    // Show interactive dropdown
+    sessionId = await selectSessionInteractive();
+
+    if (!sessionId) {
+      // User cancelled or no sessions available
+      return;
+    }
+  }
+
+  // Switch to the selected session
+  const result = manager.switchToSession(sessionId);
+
+  if (result.loadSuccessful) {
+    const session = result.session;
+    const title = session.getTitle();
+    const displayName = title || sessionId;
+
+    printSuccess(`Switched to session: ${displayName}`);
+
+    if (result.hasHistory) {
+      const tokenInfo = session.getTokenInfo();
+      printInfo(
+        `Session has ${session.getHistory().length} messages (${tokenInfo.total} tokens)`
+      );
+    }
+  } else {
+    printError(`Failed to switch: ${result.error}`);
   }
 }
 

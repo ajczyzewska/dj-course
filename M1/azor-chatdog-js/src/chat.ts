@@ -75,7 +75,7 @@ export async function mainLoop(): Promise<void> {
 
       // Handle commands
       if (userInput.startsWith('/')) {
-        const shouldExit = handleCommand(userInput, manager);
+        const shouldExit = await handleCommand(userInput, manager);
         if (shouldExit) {
           break;
         }

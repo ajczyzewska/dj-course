@@ -2,14 +2,16 @@
  * Google Gemini API LLM Client
  */
 
-import { GoogleGenerativeAI, Content } from '@google/generative-ai';
+import { GoogleGenerativeAI, Content, FunctionCall } from '@google/generative-ai';
 import type {
   ILLMClient,
   ILLMChatSession,
   Message,
   LLMResponse,
+  ToolDefinition,
 } from '../types/index.js';
 import { validateGeminiConfig } from './geminiValidation.js';
+import { printInfo, printError } from '../cli/console.js';
 
 /**
  * Wrapper for Gemini chat session to provide universal interface
@@ -17,15 +19,30 @@ import { validateGeminiConfig } from './geminiValidation.js';
 class GeminiChatSessionWrapper implements ILLMChatSession {
   private geminiSession: any;
   private history: Message[] = [];
+  private toolsMap?: Record<string, (args: any) => Promise<string>>;
 
-  constructor(geminiSession: any, initialHistory?: Message[]) {
+  constructor(
+    geminiSession: any,
+    initialHistory?: Message[],
+    toolsMap?: Record<string, (args: any) => Promise<string>>
+  ) {
     this.geminiSession = geminiSession;
     this.history = initialHistory || [];
+    this.toolsMap = toolsMap;
   }
 
   async sendMessage(text: string): Promise<LLMResponse> {
     const result = await this.geminiSession.sendMessage(text);
     const response = result.response;
+
+    // Check for function calls
+    const functionCalls = this.extractFunctionCalls(response);
+
+    if (functionCalls.length > 0 && this.toolsMap) {
+      // Handle function calls
+      return await this.handleFunctionCalls(functionCalls);
+    }
+
     const responseText = response.text();
 
     // Add to history
@@ -39,6 +56,106 @@ class GeminiChatSessionWrapper implements ILLMChatSession {
     });
 
     return { text: responseText };
+  }
+
+  private extractFunctionCalls(response: any): FunctionCall[] {
+    const functionCalls: FunctionCall[] = [];
+
+    if (response.candidates && response.candidates.length > 0) {
+      const candidate = response.candidates[0];
+      if (candidate.content && candidate.content.parts) {
+        for (const part of candidate.content.parts) {
+          if (part.functionCall) {
+            functionCalls.push(part.functionCall);
+          }
+        }
+      }
+    }
+
+    return functionCalls;
+  }
+
+  private async handleFunctionCalls(functionCalls: FunctionCall[]): Promise<LLMResponse> {
+    for (const functionCall of functionCalls) {
+      const functionName = functionCall.name;
+      const functionArgs = functionCall.args || {};
+
+      printInfo(`🔧 Wywołanie narzędzia: ${functionName}(${JSON.stringify(functionArgs)})`);
+
+      if (this.toolsMap && functionName in this.toolsMap) {
+        try {
+          const toolFunction = this.toolsMap[functionName];
+          const result = await toolFunction(functionArgs);
+          printInfo(`✅ Narzędzie ${functionName} wykonane`);
+
+          // Send function result back to the model
+          const functionResponse = {
+            functionResponse: {
+              name: functionName,
+              response: { result },
+            },
+          };
+
+          const nextResult = await this.geminiSession.sendMessage([functionResponse]);
+          const nextResponse = nextResult.response;
+          const responseText = nextResponse.text();
+
+          // Update history
+          this.history.push({
+            role: 'model',
+            parts: [{ text: responseText }],
+          });
+
+          return { text: responseText };
+        } catch (error) {
+          const errorMsg = `Error executing ${functionName}: ${(error as Error).message}`;
+          printError(`❌ ${errorMsg}`);
+
+          // Send error back to the model
+          const errorResponse = {
+            functionResponse: {
+              name: functionName,
+              response: { error: errorMsg },
+            },
+          };
+
+          const nextResult = await this.geminiSession.sendMessage([errorResponse]);
+          const nextResponse = nextResult.response;
+          const responseText = nextResponse.text();
+
+          this.history.push({
+            role: 'model',
+            parts: [{ text: responseText }],
+          });
+
+          return { text: responseText };
+        }
+      } else {
+        const errorMsg = `Unknown function: ${functionName}`;
+        printError(`❌ ${errorMsg}`);
+
+        const errorResponse = {
+          functionResponse: {
+            name: functionName,
+            response: { error: errorMsg },
+          },
+        };
+
+        const nextResult = await this.geminiSession.sendMessage([errorResponse]);
+        const nextResponse = nextResult.response;
+        const responseText = nextResponse.text();
+
+        this.history.push({
+          role: 'model',
+          parts: [{ text: responseText }],
+        });
+
+        return { text: responseText };
+      }
+    }
+
+    // Fallback (should not reach here)
+    return { text: '' };
   }
 
   getHistory(): Message[] {
@@ -74,7 +191,9 @@ export class GeminiLLMClient implements ILLMClient {
   createChatSession(
     systemInstruction: string,
     history?: Message[],
-    thinkingBudget?: number
+    thinkingBudget?: number,
+    tools?: ToolDefinition[],
+    toolsMap?: Record<string, (args: any) => Promise<string>>
   ): ILLMChatSession {
     // Convert universal Message format to Gemini Content format
     const geminiHistory: Content[] = (history || []).map((msg) => ({
@@ -98,13 +217,24 @@ export class GeminiLLMClient implements ILLMClient {
       };
     }
 
+    // Add tools if specified
+    if (tools && tools.length > 0) {
+      const functionDeclarations = tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+      }));
+
+      modelConfig.tools = [{ functionDeclarations }];
+    }
+
     const model = this.genAI.getGenerativeModel(modelConfig);
 
     const geminiSession = model.startChat({
       history: geminiHistory,
     });
 
-    return new GeminiChatSessionWrapper(geminiSession, history);
+    return new GeminiChatSessionWrapper(geminiSession, history, toolsMap);
   }
 
   /**

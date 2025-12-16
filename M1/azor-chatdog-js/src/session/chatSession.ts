@@ -17,6 +17,7 @@ import { appendToWAL } from '../files/wal.js';
 import { MAX_CONTEXT_TOKENS } from '../files/config.js';
 import { GeminiLLMClient } from '../llm/geminiClient.js';
 import { LlamaClient } from '../llm/llamaClient.js';
+import { CLARIFICATION_TOOL_DEFINITION, CLARIFICATION_TOOLS_MAP } from '../tools/clarificationTool.js';
 
 /**
  * Engine mapping for LLM client selection
@@ -44,20 +45,33 @@ export class ChatSession {
   private llmClient: ILLMClient;
   private llmChatSession: ILLMChatSession;
   private assistant: Assistant;
+  private title?: string;
 
-  constructor(assistant: Assistant, sessionId?: string, history?: Message[]) {
+  constructor(assistant: Assistant, sessionId?: string, history?: Message[], title?: string) {
     this.sessionId = sessionId || uuidv4();
     this.assistant = assistant;
     this.history = history || [];
+    this.title = title;
 
     // Initialize LLM client
     this.llmClient = getSelectedLLMClient();
 
-    // Create chat session
-    this.llmChatSession = this.llmClient.createChatSession(
-      assistant.systemPrompt,
-      this.history
-    );
+    // Create chat session with tools support for Gemini
+    if (this.llmClient instanceof GeminiLLMClient) {
+      this.llmChatSession = this.llmClient.createChatSession(
+        assistant.systemPrompt,
+        this.history,
+        undefined,
+        [CLARIFICATION_TOOL_DEFINITION],
+        CLARIFICATION_TOOLS_MAP
+      );
+    } else {
+      // LlamaClient doesn't support tools yet
+      this.llmChatSession = this.llmClient.createChatSession(
+        assistant.systemPrompt,
+        this.history
+      );
+    }
   }
 
   /**
@@ -73,8 +87,8 @@ export class ChatSession {
       return { success: false, error: result.error };
     }
 
-    const history = result.value;
-    const session = new ChatSession(assistant, sessionId, history);
+    const { history, title } = result.value;
+    const session = new ChatSession(assistant, sessionId, history, title);
 
     return { success: true, value: session };
   }
@@ -87,7 +101,8 @@ export class ChatSession {
       this.sessionId,
       this.history,
       this.assistant.systemPrompt,
-      this.llmClient.getModelName()
+      this.llmClient.getModelName(),
+      this.title
     );
   }
 
@@ -127,10 +142,20 @@ export class ChatSession {
   clearHistory(): void {
     this.history = [];
     // Recreate chat session with empty history
-    this.llmChatSession = this.llmClient.createChatSession(
-      this.assistant.systemPrompt,
-      []
-    );
+    if (this.llmClient instanceof GeminiLLMClient) {
+      this.llmChatSession = this.llmClient.createChatSession(
+        this.assistant.systemPrompt,
+        [],
+        undefined,
+        [CLARIFICATION_TOOL_DEFINITION],
+        CLARIFICATION_TOOLS_MAP
+      );
+    } else {
+      this.llmChatSession = this.llmClient.createChatSession(
+        this.assistant.systemPrompt,
+        []
+      );
+    }
   }
 
   /**
@@ -145,10 +170,20 @@ export class ChatSession {
     this.history.splice(this.history.length - 2, 2);
 
     // Recreate chat session with updated history
-    this.llmChatSession = this.llmClient.createChatSession(
-      this.assistant.systemPrompt,
-      this.history
-    );
+    if (this.llmClient instanceof GeminiLLMClient) {
+      this.llmChatSession = this.llmClient.createChatSession(
+        this.assistant.systemPrompt,
+        this.history,
+        undefined,
+        [CLARIFICATION_TOOL_DEFINITION],
+        CLARIFICATION_TOOLS_MAP
+      );
+    } else {
+      this.llmChatSession = this.llmClient.createChatSession(
+        this.assistant.systemPrompt,
+        this.history
+      );
+    }
 
     return true;
   }
@@ -207,5 +242,19 @@ export class ChatSession {
    */
   get modelName(): string {
     return this.llmClient.getModelName();
+  }
+
+  /**
+   * Get session title
+   */
+  getTitle(): string | undefined {
+    return this.title;
+  }
+
+  /**
+   * Set session title
+   */
+  setTitle(title: string): void {
+    this.title = title;
   }
 }

@@ -82,8 +82,12 @@ export class LlamaClient implements ILLMClient {
    */
   createChatSession(
     systemInstruction: string,
-    history?: Message[]
+    history?: Message[],
+    _thinkingBudget?: number,
+    _tools?: any[],
+    _toolsMap?: Record<string, (args: any) => Promise<string>>
   ): ILLMChatSession {
+    // LlamaClient doesn't support tools yet, so we ignore those parameters
     return new LlamaChatSessionWrapper(systemInstruction, history);
   }
 

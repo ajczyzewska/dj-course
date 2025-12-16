@@ -43,13 +43,19 @@ class GeminiChatSessionWrapper:
         """
         response = self.gemini_session.send_message(text)
 
+        # DEBUG: Show raw response structure
+        console.print_info(f"🔍 DEBUG: Otrzymano odpowiedź z {len(response.candidates)} kandydatami" if hasattr(response, 'candidates') else "🔍 DEBUG: Brak candidates w odpowiedzi")
+
         # Handle function calls if present
         if hasattr(response, 'candidates') and response.candidates:
             candidate = response.candidates[0]
             if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                console.print_info(f"🔍 DEBUG: Liczba parts w odpowiedzi: {len(candidate.content.parts)}")
                 # Check for function calls in the response
-                for part in candidate.content.parts:
+                for i, part in enumerate(candidate.content.parts):
+                    console.print_info(f"🔍 DEBUG: Part {i}: has function_call={hasattr(part, 'function_call')}, has text={hasattr(part, 'text')}")
                     if hasattr(part, 'function_call') and part.function_call:
+                        console.print_info(f"🎯 DEBUG: ZNALEZIONO FUNCTION CALL!")
                         # Execute the function call
                         response = self._handle_function_call(part.function_call)
 
