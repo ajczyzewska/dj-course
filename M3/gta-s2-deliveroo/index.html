@@ -207,6 +207,22 @@
 </div>
 
 <script>
+// --- POLYFILL FOR ROUNDRECT ---
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+    CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+        if (w < 2 * r) r = w / 2;
+        if (h < 2 * r) r = h / 2;
+        this.beginPath();
+        this.moveTo(x + r, y);
+        this.arcTo(x + w, y, x + w, y + h, r);
+        this.arcTo(x + w, y + h, x, y + h, r);
+        this.arcTo(x, y + h, x, y, r);
+        this.arcTo(x, y, x + w, y, r);
+        this.closePath();
+        return this;
+    };
+}
+
 // --- COLLAPSIBLE SECTIONS ---
 function toggleSection(sectionId) {
     const content = document.getElementById(sectionId + '-content');
@@ -222,6 +238,71 @@ function toggleSection(sectionId) {
 }
 
 // --- CONFIGURATION ---
+const VEHICLE_TYPES = {
+    normal: {
+        name: 'Sedan',
+        description: 'Zwykły samochód osobowy - zrównoważony',
+        carWidth: 44,
+        carLength: 90,
+        wheelBase: 60,
+        wheelWidth: 10,
+        wheelLength: 20,
+        acceleration: 0.05,
+        maxSpeed: 18.0,
+        maxReverseSpeed: -5.0,
+        friction: 0.06,
+        brakingForce: 0.5,
+        maxSteerAngle: 0.65,
+        steerSpeed: 0.03,
+        tireGrip: 0.85,
+        color: '#3498db',
+        kmhFactor: 8
+    },
+    sport: {
+        name: 'Auto Sportowe',
+        description: 'Szybkie i zwinne - trudniejsze w prowadzeniu',
+        carWidth: 42,
+        carLength: 95,
+        wheelBase: 62,
+        wheelWidth: 12,
+        wheelLength: 22,
+        acceleration: 0.15,
+        maxSpeed: 25.0,
+        maxReverseSpeed: -6.0,
+        friction: 0.04,
+        brakingForce: 0.7,
+        maxSteerAngle: 0.75,
+        steerSpeed: 0.05,
+        tireGrip: 0.95,
+        color: '#e74c3c',
+        kmhFactor: 10
+    },
+    truck: {
+        name: 'Ciągnik Siodłowy',
+        description: 'Z naczepą - ekstremalnie trudny!',
+        carWidth: 50,
+        carLength: 100, // Kabina ciągnika
+        trailerWidth: 50,
+        trailerLength: 130, // Krótsza naczepa
+        trailerOffset: 10, // Odległość od tyłu ciągnika do punktu zaczepienia
+        wheelBase: 70,
+        wheelWidth: 14,
+        wheelLength: 26,
+        acceleration: 0.02,
+        maxSpeed: 10.0,
+        maxReverseSpeed: -3.5,
+        friction: 0.1,
+        brakingForce: 0.3,
+        maxSteerAngle: 0.6,
+        steerSpeed: 0.015,
+        tireGrip: 0.7,
+        color: '#e67e22',
+        trailerColor: '#95a5a6',
+        kmhFactor: 5,
+        hasTrailer: true
+    }
+};
+
 const CONFIG = {
     // Car dimensions (approx 1px = 2cm scale)
     carWidth: 44,
@@ -899,7 +980,60 @@ class ParkingZone {
 
 class PlayerCar {
     constructor(x, y, angleDeg) {
+        this.vehicleType = 'normal'; // Default vehicle type
         this.reset(x, y, angleDeg);
+    }
+
+    setVehicleType(type) {
+        if (!VEHICLE_TYPES[type]) {
+            console.error(`Unknown vehicle type: ${type}`);
+            return;
+        }
+        this.vehicleType = type;
+        const vType = VEHICLE_TYPES[type];
+
+        // Store vehicle properties directly on player
+        this.vProps = {
+            carWidth: vType.carWidth,
+            carLength: vType.carLength,
+            wheelBase: vType.wheelBase,
+            wheelWidth: vType.wheelWidth,
+            wheelLength: vType.wheelLength,
+            acceleration: vType.acceleration,
+            maxSpeed: vType.maxSpeed,
+            maxReverseSpeed: vType.maxReverseSpeed,
+            friction: vType.friction,
+            brakingForce: vType.brakingForce,
+            maxSteerAngle: vType.maxSteerAngle,
+            steerSpeed: vType.steerSpeed,
+            tireGrip: vType.tireGrip,
+            kmhFactor: vType.kmhFactor,
+            hasTrailer: vType.hasTrailer || false,
+            trailerWidth: vType.trailerWidth,
+            trailerLength: vType.trailerLength,
+            trailerOffset: vType.trailerOffset,
+            trailerColor: vType.trailerColor
+        };
+
+        // Update CONFIG with vehicle-specific values (avoid acceleration getter)
+        CONFIG.carWidth = vType.carWidth;
+        CONFIG.carLength = vType.carLength;
+        CONFIG.wheelBase = vType.wheelBase;
+        CONFIG.wheelWidth = vType.wheelWidth;
+        CONFIG.wheelLength = vType.wheelLength;
+        CONFIG.maxSpeed = vType.maxSpeed;
+        CONFIG.maxReverseSpeed = vType.maxReverseSpeed;
+        CONFIG.friction = vType.friction;
+        CONFIG.brakingForce = vType.brakingForce;
+        CONFIG.maxSteerAngle = vType.maxSteerAngle;
+        CONFIG.steerSpeed = vType.steerSpeed;
+        CONFIG.tireGrip = vType.tireGrip;
+        CONFIG.kmhFactor = vType.kmhFactor;
+
+        // Update car dimensions immediately
+        this.w = vType.carWidth;
+        this.l = vType.carLength;
+        this.color = vType.color;
     }
 
     reset(x, y, angleDeg) {
@@ -933,6 +1067,16 @@ class PlayerCar {
         // Hamulec ręczny - startowanie
         this.handbrakeBoost = 0; // Zgromadzona moc (0-1)
         this.previousSpaceKey = false; // Czy w poprzedniej klatce trzymał SPACE
+
+        // Set default color if not set by vehicle type
+        if (!this.color) {
+            this.color = VEHICLE_TYPES[this.vehicleType].color;
+        }
+
+        // Trailer angle (for articulated vehicles)
+        if (this.trailerAngle === undefined) {
+            this.trailerAngle = 0; // Relative to truck, starts straight
+        }
     }
 
     toggleSteeringMode() {
@@ -979,6 +1123,44 @@ class PlayerCar {
         } else {
             this.updateSimplePhysics(input, deltaTime);
         }
+
+        // Update trailer angle if has trailer
+        if (this.vProps && this.vProps.hasTrailer) {
+            this.updateTrailerAngle(deltaTime);
+        }
+    }
+
+    updateTrailerAngle(deltaTime) {
+        // Calculate hitch point (where trailer connects to truck)
+        const hitchX = this.x - Math.cos(this.angle) * (CONFIG.carLength/2 + this.vProps.trailerOffset);
+        const hitchY = this.y - Math.sin(this.angle) * (CONFIG.carLength/2 + this.vProps.trailerOffset);
+
+        // Calculate where trailer wants to be (based on its previous angle and position)
+        const trailerCenterDist = this.vProps.trailerLength / 2;
+
+        // Trailer center position (if it maintained its angle)
+        const oldTrailerCenterX = hitchX - Math.cos(this.angle + this.trailerAngle) * trailerCenterDist;
+        const oldTrailerCenterY = hitchY - Math.sin(this.angle + this.trailerAngle) * trailerCenterDist;
+
+        // Calculate desired trailer angle based on hitch point
+        const dx = oldTrailerCenterX - hitchX;
+        const dy = oldTrailerCenterY - hitchY;
+        const desiredTrailerWorldAngle = Math.atan2(dy, dx);
+
+        // Convert to relative angle
+        let desiredRelativeAngle = desiredTrailerWorldAngle - this.angle;
+
+        // Normalize angle to -PI to PI
+        while (desiredRelativeAngle > Math.PI) desiredRelativeAngle -= Math.PI * 2;
+        while (desiredRelativeAngle < -Math.PI) desiredRelativeAngle += Math.PI * 2;
+
+        // Smoothly interpolate trailer angle (simulates hinge physics)
+        const stiffness = 0.1; // How quickly trailer follows truck
+        this.trailerAngle += (desiredRelativeAngle - this.trailerAngle) * stiffness;
+
+        // Limit maximum angle (prevent jackknifing)
+        const maxTrailerAngle = Math.PI / 3; // 60 degrees max
+        this.trailerAngle = Math.max(-maxTrailerAngle, Math.min(maxTrailerAngle, this.trailerAngle));
     }
 
     // === PROSTA FIZYKA (bezpieczna, przewidywalna) ===
@@ -1032,9 +1214,10 @@ class PlayerCar {
         // === NORMALNA FIZYKA ===
         if (this.engineOn) {
             // 1. Acceleration (tylko jeśli NIE buduje boost)
+            const accel = this.vProps ? this.vProps.acceleration : CONFIG.acceleration;
             if (!(isHandbraking && isThrottling)) {
-                if (input.keys.ArrowUp) this.speed += CONFIG.acceleration * dt;
-                else if (input.keys.ArrowDown) this.speed -= CONFIG.acceleration * dt;
+                if (input.keys.ArrowUp) this.speed += accel * dt;
+                else if (input.keys.ArrowDown) this.speed -= accel * dt;
             }
 
             // 2. Braking (tylko jeśli NIE trzyma gazu równocześnie)
@@ -1198,9 +1381,10 @@ class PlayerCar {
         let throttle = 0;
 
         // Akceleracja tylko jeśli NIE buduje boost (hamulec + gaz)
+        const accel = this.vProps ? this.vProps.acceleration : CONFIG.acceleration;
         if (this.engineOn && !(isHandbraking && isThrottling)) {
-            if (input.keys.ArrowUp) throttle = CONFIG.acceleration * dt;
-            else if (input.keys.ArrowDown) throttle = -CONFIG.acceleration * dt;
+            if (input.keys.ArrowUp) throttle = accel * dt;
+            else if (input.keys.ArrowDown) throttle = -accel * dt;
         }
 
         // 3. Oblicz prędkość w lokalnym układzie samochodu (forward/lateral)
@@ -1399,6 +1583,45 @@ class PlayerCar {
         ctx.translate(this.x, this.y);
         ctx.rotate(this.angle);
 
+        // --- TRAILER (draw first, behind the truck) ---
+        if (this.vProps && this.vProps.hasTrailer) {
+            // Calculate hitch point (connection point)
+            const hitchX = -CONFIG.carLength/2 - this.vProps.trailerOffset;
+
+            ctx.save();
+            // Move to hitch point
+            ctx.translate(hitchX, 0);
+            // Rotate by trailer angle (relative to truck)
+            ctx.rotate(this.trailerAngle);
+            // Move to trailer center
+            ctx.translate(-this.vProps.trailerLength/2, 0);
+
+            // Trailer body
+            ctx.fillStyle = this.vProps.trailerColor || '#95a5a6';
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.roundRect(-this.vProps.trailerLength/2, -this.vProps.trailerWidth/2,
+                         this.vProps.trailerLength, this.vProps.trailerWidth, 4);
+            ctx.fill();
+            ctx.stroke();
+
+            // Trailer wheels (6 wheels)
+            ctx.fillStyle = '#222';
+            const trailerWheelSize = 8;
+            const trailerWheelY = this.vProps.trailerWidth/2 - 3;
+            // Rear wheels
+            ctx.fillRect(-this.vProps.trailerLength/2 + 15, -trailerWheelY - 3, trailerWheelSize, 4);
+            ctx.fillRect(-this.vProps.trailerLength/2 + 15, trailerWheelY - 1, trailerWheelSize, 4);
+            // Middle wheels
+            ctx.fillRect(-10, -trailerWheelY - 3, trailerWheelSize, 4);
+            ctx.fillRect(-10, trailerWheelY - 1, trailerWheelSize, 4);
+            ctx.fillRect(10, -trailerWheelY - 3, trailerWheelSize, 4);
+            ctx.fillRect(10, trailerWheelY - 1, trailerWheelSize, 4);
+
+            ctx.restore();
+        }
+
         // Symmetrical positions for wheels and lights
         const wheelCenterY = 15;
         const wheelTopY_L = -wheelCenterY - CONFIG.wheelWidth / 2;
@@ -1446,11 +1669,11 @@ class PlayerCar {
         this.drawWheel(ctx, CONFIG.wheelBase/2, wheelTopY_R, this.steeringAngle);
 
         // --- BODY ---
-        ctx.fillStyle = '#3498db';
+        ctx.fillStyle = this.color || '#3498db';
         ctx.beginPath();
         ctx.roundRect(-CONFIG.carLength/2, -CONFIG.carWidth/2, CONFIG.carLength, CONFIG.carWidth, 6);
         ctx.fill();
-        ctx.strokeStyle = '#2980b9';
+        ctx.strokeStyle = this.color ? this.adjustBrightness(this.color, -20) : '#2980b9';
         ctx.lineWidth = 2;
         ctx.stroke();
 
@@ -1526,6 +1749,17 @@ class PlayerCar {
         ctx.fillRect(-2, 2, 4, 6);
         ctx.restore();
     }
+
+    adjustBrightness(color, percent) {
+        const num = parseInt(color.replace("#",""), 16);
+        const amt = Math.round(2.55 * percent);
+        const R = (num >> 16) + amt;
+        const G = (num >> 8 & 0x00FF) + amt;
+        const B = (num & 0x0000FF) + amt;
+        return "#" + (0x1000000 + (R<255?R<1?0:R:255)*0x10000 +
+            (G<255?G<1?0:G:255)*0x100 + (B<255?B<1?0:B:255))
+            .toString(16).slice(1);
+    }
 }
 
 class Game {
@@ -1533,18 +1767,23 @@ class Game {
         this.shakeTimer = 0;
         this.levels = [];
         this.currentLevelIdx = 0;
-        this.state = 'TITLE_SCREEN'; 
+        this.state = 'VEHICLE_SELECTION';
         this.bonkPos = {x:0, y:0};
         this.player = new PlayerCar(0,0,0);
         this.currentParkingZones = [];
         this.isMusicOn = true;
-        
+
         // Title screen animation
         this.titleTime = 0;
         this.titlePressVisible = true;
         this.titleBlinkTimer = 0;
         this.titleButtonHover = false;
-        
+
+        // Vehicle selection
+        this.selectedVehicle = null;
+        this.vehicleSelectionTime = 0;
+        this.hoveredVehicle = null;
+
         this.updateUI();
     }
 
@@ -1580,6 +1819,43 @@ class Game {
     
     defineLevels() {
         return [
+            {
+                name: "Parking Skośny (Pusty)",
+                type: 'lot',
+                start: { x: 100, y: 100, angle: 0 },
+                obstacles: [],
+                cars: [],
+                parkingZones: [
+                    new ParkingZone({x: 300, y: 350, w: 70, l: 120, angle: 45}),
+                    new ParkingZone({x: 450, y: 350, w: 70, l: 120, angle: 45}),
+                    new ParkingZone({x: 600, y: 350, w: 70, l: 120, angle: 45})
+                ],
+                curbs: [
+                    new Curb(canvas.width/2, 20, 40, canvas.width, 0),
+                    new Curb(canvas.width/2, canvas.height-20, 40, canvas.width, 0),
+                ]
+            },
+            {
+                name: "Parking Skośny",
+                type: 'lot',
+                start: { x: 100, y: 100, angle: 0 },
+                obstacles: [],
+                cars: [
+                    new ObstacleCar({x: 300, y: 350, angle: 45, type: 'sedan', color: '#e74c3c'}),
+                    new ObstacleCar({x: 600, y: 350, angle: 45, type: 'suv', color: '#3498db'}),
+                    new ObstacleCar({x: 200, y: 500, angle: 45, type: 'compact', color: '#2ecc71'}),
+                    new ObstacleCar({x: 350, y: 500, angle: 45, type: 'sedan', color: '#f39c12'}),
+                    new ObstacleCar({x: 650, y: 500, angle: 45, type: 'suv', color: '#9b59b6'})
+                ],
+                parkingZones: [
+                    new ParkingZone({x: 450, y: 350, w: 70, l: 120, angle: 45}),
+                    new ParkingZone({x: 500, y: 500, w: 70, l: 120, angle: 45})
+                ],
+                curbs: [
+                    new Curb(canvas.width/2, 20, 40, canvas.width, 0),
+                    new Curb(canvas.width/2, canvas.height-20, 40, canvas.width, 0),
+                ]
+            },
             {
                 name: "Pusty Parking",
                 type: 'lot',
@@ -2082,8 +2358,8 @@ class Game {
     }
 
     update(deltaTime) {
-        // Title screen - handled by mouse events
-        if (this.state === 'TITLE_SCREEN') {
+        // Vehicle selection and title screen - handled by mouse events
+        if (this.state === 'VEHICLE_SELECTION' || this.state === 'TITLE_SCREEN') {
             return;
         }
 
@@ -2240,6 +2516,13 @@ class Game {
         }
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Vehicle Selection Screen
+        if (this.state === 'VEHICLE_SELECTION') {
+            this.drawVehicleSelectionScreen();
+            ctx.restore();
+            return;
+        }
 
         // Title Screen
         if (this.state === 'TITLE_SCREEN') {
@@ -2477,6 +2760,151 @@ class Game {
         ctx.textAlign = "center";
         ctx.fillText("S2 (OBWODNICA WARSZAFKI)", canvas.width/2, 50);
         ctx.restore();
+    }
+
+    drawVehicleSelectionScreen() {
+        this.vehicleSelectionTime += 0.016;
+
+        // Background gradient
+        const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+        grad.addColorStop(0, '#1e3c72');
+        grad.addColorStop(0.5, '#2a5298');
+        grad.addColorStop(1, '#7e22ce');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Title
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 42px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('WYBIERZ POJAZD', canvas.width / 2, 80);
+
+        // Vehicle cards
+        const vehicles = ['normal', 'sport', 'truck'];
+        const cardWidth = 250;
+        const cardHeight = 320;
+        const spacing = 40;
+        const totalWidth = vehicles.length * cardWidth + (vehicles.length - 1) * spacing;
+        const startX = (canvas.width - totalWidth) / 2;
+        const startY = 150;
+
+        this.vehicleCards = [];
+
+        vehicles.forEach((vType, index) => {
+            const vData = VEHICLE_TYPES[vType];
+            const cardX = startX + index * (cardWidth + spacing);
+            const cardY = startY;
+
+            // Store card bounds for hover/click detection
+            this.vehicleCards.push({
+                type: vType,
+                x: cardX,
+                y: cardY,
+                width: cardWidth,
+                height: cardHeight
+            });
+
+            const isHovered = this.hoveredVehicle === vType;
+            const scale = isHovered ? 1.05 : 1.0;
+
+            ctx.save();
+            ctx.translate(cardX + cardWidth/2, cardY + cardHeight/2);
+            ctx.scale(scale, scale);
+            ctx.translate(-(cardX + cardWidth/2), -(cardY + cardHeight/2));
+
+            // Card background
+            ctx.fillStyle = isHovered ? 'rgba(255, 255, 255, 0.15)' : 'rgba(255, 255, 255, 0.08)';
+            ctx.strokeStyle = isHovered ? '#ffffff' : 'rgba(255, 255, 255, 0.3)';
+            ctx.lineWidth = isHovered ? 3 : 2;
+            ctx.beginPath();
+            ctx.roundRect(cardX, cardY, cardWidth, cardHeight, 10);
+            ctx.fill();
+            ctx.stroke();
+
+            // Vehicle name
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 24px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(vData.name, cardX + cardWidth/2, cardY + 40);
+
+            // Vehicle preview (simplified car drawing)
+            ctx.save();
+            ctx.translate(cardX + cardWidth/2, cardY + 140);
+
+            // Draw simplified car
+            const carScale = vType === 'truck' ? 0.8 : 1.2;
+            ctx.scale(carScale, carScale);
+
+            // Draw trailer first if truck
+            if (vType === 'truck' && vData.hasTrailer) {
+                const trailerX = -vData.carLength/4 - vData.trailerOffset/2;
+                ctx.fillStyle = vData.trailerColor || '#95a5a6';
+                ctx.strokeStyle = '#000000';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.roundRect(trailerX - vData.trailerLength/4, -vData.trailerWidth/4,
+                             vData.trailerLength/2, vData.trailerWidth/2, 4);
+                ctx.fill();
+                ctx.stroke();
+
+                // Trailer wheels
+                ctx.fillStyle = '#222';
+                const trailerWheelSize = 6;
+                ctx.fillRect(trailerX - vData.trailerLength/4 + 5, -vData.trailerWidth/4 - 3, trailerWheelSize, 4);
+                ctx.fillRect(trailerX - vData.trailerLength/4 + 5, vData.trailerWidth/4 - 1, trailerWheelSize, 4);
+                ctx.fillRect(trailerX + vData.trailerLength/4 - 10, -vData.trailerWidth/4 - 3, trailerWheelSize, 4);
+                ctx.fillRect(trailerX + vData.trailerLength/4 - 10, vData.trailerWidth/4 - 1, trailerWheelSize, 4);
+            }
+
+            // Draw cab/car
+            ctx.fillStyle = vData.color;
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.roundRect(-vData.carLength/4, -vData.carWidth/4, vData.carLength/2, vData.carWidth/2, 4);
+            ctx.fill();
+            ctx.stroke();
+
+            // Wheels
+            ctx.fillStyle = '#222';
+            const wheelSize = 6;
+            ctx.fillRect(-vData.carLength/4 - 5, -vData.carWidth/4 - 3, wheelSize, 4);
+            ctx.fillRect(-vData.carLength/4 - 5, vData.carWidth/4 - 1, wheelSize, 4);
+            ctx.fillRect(vData.carLength/4 - 1, -vData.carWidth/4 - 3, wheelSize, 4);
+            ctx.fillRect(vData.carLength/4 - 1, vData.carWidth/4 - 1, wheelSize, 4);
+
+            ctx.restore();
+
+            // Stats
+            const statsY = cardY + 200;
+            ctx.font = '14px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillStyle = '#ffffff';
+
+            const stats = [
+                `Przyspieszenie: ${vType === 'sport' ? '★★★' : vType === 'normal' ? '★★☆' : '★☆☆'}`,
+                `Prędkość: ${vType === 'sport' ? '★★★' : vType === 'normal' ? '★★☆' : '★☆☆'}`,
+                `Zwrotność: ${vType === 'sport' ? '★★★' : vType === 'normal' ? '★★☆' : '★☆☆'}`
+            ];
+
+            stats.forEach((stat, i) => {
+                ctx.fillText(stat, cardX + 20, statsY + i * 22);
+            });
+
+            // Description
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.fillText(vData.description, cardX + cardWidth/2, cardY + cardHeight - 20);
+
+            ctx.restore();
+        });
+
+        // Instructions
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.font = '18px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Kliknij na pojazd aby wybrać', canvas.width / 2, canvas.height - 40);
     }
 
     drawTitleScreen() {
@@ -2832,7 +3260,7 @@ function loadNextLevel() {
 function resize() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
-    if (game && game.state !== 'TITLE_SCREEN' && game.state !== 'LEVEL_COMPLETE') {
+    if (game && game.state !== 'TITLE_SCREEN' && game.state !== 'LEVEL_COMPLETE' && game.state !== 'VEHICLE_SELECTION') {
         game.loadLevel(game.currentLevelIdx);
     }
 }
@@ -2853,13 +3281,29 @@ function loop(timestamp = 0) {
 // Mouse handling for title screen and level complete screen
 canvas.addEventListener('mousemove', (e) => {
     if (!game) return;
-    
+
     const rect = canvas.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
-    
+
+    // Vehicle selection screen
+    if (game.state === 'VEHICLE_SELECTION' && game.vehicleCards) {
+        let hoveredAny = false;
+        for (const card of game.vehicleCards) {
+            if (mouseX >= card.x && mouseX <= card.x + card.width &&
+                mouseY >= card.y && mouseY <= card.y + card.height) {
+                game.hoveredVehicle = card.type;
+                hoveredAny = true;
+                break;
+            }
+        }
+        if (!hoveredAny) {
+            game.hoveredVehicle = null;
+        }
+        canvas.style.cursor = hoveredAny ? 'pointer' : 'default';
+    }
     // Title screen button
-    if (game.state === 'TITLE_SCREEN' && game.titleButtonBounds) {
+    else if (game.state === 'TITLE_SCREEN' && game.titleButtonBounds) {
         const btn = game.titleButtonBounds;
         game.titleButtonHover = (
             mouseX >= btn.x && mouseX <= btn.x + btn.width &&
@@ -2884,11 +3328,25 @@ canvas.addEventListener('mousemove', (e) => {
 
 canvas.addEventListener('click', (e) => {
     if (!game) return;
-    
+
     const rect = canvas.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
-    
+
+    // Vehicle selection screen
+    if (game.state === 'VEHICLE_SELECTION' && game.vehicleCards) {
+        for (const card of game.vehicleCards) {
+            if (mouseX >= card.x && mouseX <= card.x + card.width &&
+                mouseY >= card.y && mouseY <= card.y + card.height) {
+                // Set vehicle type and start game
+                game.player.setVehicleType(card.type);
+                game.state = 'TITLE_SCREEN';
+                canvas.style.cursor = 'default';
+                break;
+            }
+        }
+    }
+
     // Title screen button
     if (game.state === 'TITLE_SCREEN' && game.titleButtonBounds) {
         const btn = game.titleButtonBounds;
@@ -2896,13 +3354,13 @@ canvas.addEventListener('click', (e) => {
             mouseX >= btn.x && mouseX <= btn.x + btn.width &&
             mouseY >= btn.y && mouseY <= btn.y + btn.height
         );
-        
+
         if (isInButton) {
             canvas.style.cursor = 'default';
             game.startGame();
         }
     }
-    
+
     // Level complete button
     if (game.state === 'LEVEL_COMPLETE' && game.levelCompleteButtonBounds) {
         const btn = game.levelCompleteButtonBounds;
@@ -2910,7 +3368,7 @@ canvas.addEventListener('click', (e) => {
             mouseX >= btn.x && mouseX <= btn.x + btn.width &&
             mouseY >= btn.y && mouseY <= btn.y + btn.height
         );
-        
+
         if (isInButton) {
             canvas.style.cursor = 'default';
             loadNextLevel();
