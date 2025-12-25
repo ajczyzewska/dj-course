@@ -68,6 +68,8 @@ def display_help(session_id: str):
     print_help("  /session new      - Rozpoczyna nową sesję.")
     print_help("\n  /pdf              - Eksportuje sesję do pliku PDF.")
     print_help("  /audio            - Generuje audio z ostatniej odpowiedzi asystenta.")
+    print_help("  /assistant [name] - Przełącza asystenta w bieżącej sesji.")
+    print_help("  /roleplay         - Rozpoczyna autonomiczną rozmowę między dwoma asystentami.")
 
 
 def display_final_instructions(session_id: str):

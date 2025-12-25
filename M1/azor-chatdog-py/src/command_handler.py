@@ -6,9 +6,10 @@ from commands.session_to_pdf import export_session_to_pdf
 from commands.session_to_audio import export_last_response_to_audio
 from commands.session_remove import remove_session_command
 from commands.session_switch import select_session_interactive
+from commands.roleplay import roleplay_command
 from assistant import get_assistant, list_assistants, get_all_assistants
 
-VALID_SLASH_COMMANDS = ['/exit', '/quit', '/switch', '/help', '/session', '/pdf', '/audio', '/assistant']
+VALID_SLASH_COMMANDS = ['/exit', '/quit', '/switch', '/help', '/session', '/pdf', '/audio', '/assistant', '/roleplay']
 
 def handle_command(user_input: str) -> bool:
     """
@@ -92,6 +93,9 @@ def handle_command(user_input: str) -> bool:
 
     elif command == '/assistant':
         handle_assistant_command(parts, manager)
+
+    elif command == '/roleplay':
+        roleplay_command()
 
     return False
 
