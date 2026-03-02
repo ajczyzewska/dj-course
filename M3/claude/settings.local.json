@@ -18,7 +18,9 @@
       "mcp__docker-mcp__list-containers",
       "mcp__docker-mcp__get-logs",
       "Bash(curl -s http://localhost:3001/employees)",
-      "Bash(curl -s http://localhost:3001/employees/)"
+      "Bash(curl -s http://localhost:3001/employees/)",
+      "Bash(/tmp/wms-test-venv/bin/pip install -q flask flask-cors sqlalchemy psycopg2-binary \"pydantic>=2\" pytest pytest-flask \"testcontainers[postgres]\")",
+      "Bash(SERVICE_NAME=wms-api POSTGRES_URL=postgresql+psycopg2://x:x@localhost/x /tmp/wms-test-venv/bin/pytest tests/ -v)"
     ],
     "deny": [],
     "ask": []

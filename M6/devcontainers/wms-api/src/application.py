@@ -12,6 +12,7 @@ from routes.payments import payments_bp
 from routes.storage import storage_bp
 from routes.employees import employees_bp
 from routes.contractors import contractors_bp
+from routes.storage_requests import storage_requests_bp
 
 assert_env_var('SERVICE_NAME')
 SERVICE_NAME = os.environ.get('SERVICE_NAME')
@@ -31,3 +32,4 @@ app.register_blueprint(payments_bp, url_prefix='/payments')
 app.register_blueprint(storage_bp, url_prefix='/storage')
 app.register_blueprint(employees_bp, url_prefix='/employees')
 app.register_blueprint(contractors_bp, url_prefix='/contractors')
+app.register_blueprint(storage_requests_bp, url_prefix='/storage-requests')
