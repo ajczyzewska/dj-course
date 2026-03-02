@@ -9,9 +9,22 @@
       "Bash(source .venv/bin/activate)",
       "Bash(python:*)",
       "Bash(pip show:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(docker compose -f docker-compose-wms.yml up -d)",
+      "Bash(python3 -m json.tool)",
+      "Bash(defaults read com.anthropic.claudefordesktop)",
+      "Bash(uv --version)",
+      "Bash(asdf list)",
+      "mcp__docker-mcp__list-containers",
+      "mcp__docker-mcp__get-logs",
+      "Bash(curl -s http://localhost:3001/employees)",
+      "Bash(curl -s http://localhost:3001/employees/)"
     ],
     "deny": [],
     "ask": []
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "docker-mcp"
+  ]
 }

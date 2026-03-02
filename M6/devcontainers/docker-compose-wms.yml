@@ -24,10 +24,30 @@ services:
       - PORT=3001
       - SERVICE_NAME=wms-api
       - POSTGRES_URL=postgresql+psycopg2://admin:strongpassword123@wms-postgres:5432/deliveroo
+      - FLASK_DEBUG=1
     ports:
       - "3001:3001"
     networks:
       - deliveroo-network
+    develop:
+      watch:
+        - action: sync
+          path: ./wms-api/src
+          target: /app/src
+        - action: rebuild
+          path: ./wms-api/requirements.txt
+
+  nginx:
+    image: nginx:alpine
+    container_name: wms-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - deliveroo-network
+    depends_on:
+      - wms-api
 
   pgadmin:
     image: dpage/pgadmin4:9.4

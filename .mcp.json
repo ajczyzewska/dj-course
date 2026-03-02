@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "docker-mcp": {
+      "command": "/Users/a.czyzewska/.local/bin/uv",
+      "args": [
+        "--directory",
+        "/Users/a.czyzewska/Documents/repos/personal-repos/dj-course/M3/mcp-docker-py",
+        "run",
+        "docker-mcp"
+      ]
+    }
+  }
+}
